@@ -62,6 +62,7 @@ int main( int argc, char** argv )
     if(argc != 3)
     {
         std::cout<<"unable to launch the program, please enter correct input arguments"<<std::endl;
+        return -1;
     }
 
     //init the matrix
@@ -104,6 +105,7 @@ int main( int argc, char** argv )
     */
 
     ///TEST TRACKING OF A RED OBJECT PROGRAM
+    /*
     cv::VideoCapture cap(0); //capture the video from webcam
 
     if ( !cap.isOpened() )  // if not success, exit program
@@ -208,6 +210,71 @@ int main( int argc, char** argv )
         }
     }
 
- return 0;
+    return 0;
+    */
 
+    ///PERSONAL TEST
+
+    if(argc != 2)
+    {
+        std::cout<<"wrong number of input arguments"<<std::endl;
+        return -1;
+    }
+
+    cv::VideoCapture cap(0); //capture the video from webcam
+
+    if ( !cap.isOpened() )  // if not success, exit program
+    {
+         std::cout << "Cannot open the web cam" << std::endl;
+         return -1;
+    }
+
+    int thres = (int)(argv[1]);
+
+    cv::Mat imgOriginal;
+    cv::Mat imgOriginalGray;
+    cv::Mat img;
+    cv::Mat imgGray;
+    cv::Mat imgDiff;
+
+    bool bSuccess = false;
+
+    bSuccess = cap.read(imgOriginal);
+    if (!bSuccess) //if not success, exit
+    {
+        std::cout << "Cannot read a frame from video stream" << std::endl;
+        return 0;
+    }
+
+    cv::cvtColor(imgOriginal, imgOriginalGray, CV_BGR2GRAY); //Convert the captured frame from BGR to gray
+
+
+    while(true)
+    {
+
+
+        bSuccess = cap.read(img); // read a new frame from video
+
+        if (!bSuccess) //if not success, break loop
+        {
+            std::cout << "Cannot read a frame from video stream" << std::endl;
+            break;
+        }
+
+        cv::cvtColor(img, imgGray, CV_BGR2GRAY); //Convert the captured frame from BGR to gray
+
+        cv::absdiff(imgGray, imgOriginalGray, imgDiff);
+
+        cv::threshold(imgDiff, imgDiff, thres, 255, 4);
+
+        cv::imshow("Image", imgDiff);
+
+        if (cv::waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
+        {
+            std::cout << "esc key is pressed by user" << std::endl;
+            break;
+        }
+    }
+
+    return 0;
 }
