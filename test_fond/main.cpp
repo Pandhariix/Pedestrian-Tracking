@@ -58,6 +58,7 @@ int main( int argc, char** argv )
     */
 
     ///OFFICIAL TEST FOND PROGRAM
+    /*
     if(argc != 3)
     {
         std::cout<<"unable to launch the program, please enter correct input arguments"<<std::endl;
@@ -68,6 +69,8 @@ int main( int argc, char** argv )
     cv::Mat imageCompare;
     cv::Mat imageFondGray;
     cv::Mat imageCompareGray;
+    cv::Mat imageFondBinary;
+    cv::Mat imageCompareBinary;
     cv::Mat imageDiff;
 
     imageFond = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);
@@ -84,8 +87,13 @@ int main( int argc, char** argv )
     cv::cvtColor(imageFond, imageFondGray, CV_BGR2GRAY);
     cv::cvtColor(imageCompare, imageCompareGray, CV_BGR2GRAY);
 
+    //convert both images to binary
+
+    cv::threshold( imageFondGray, imageFondBinary, 20, 255,1);
+    cv::threshold(imageCompareGray, imageCompareBinary, 20, 255, 1);
+
     //difference between the two images
-    cv::absdiff(imageFondGray, imageCompareGray, imageDiff);
+    cv::absdiff(imageFondBinary, imageCompareBinary, imageDiff);
 
     //display
     cv::namedWindow( "test_fond", cv::WINDOW_AUTOSIZE );// Create a window for display.
@@ -93,6 +101,78 @@ int main( int argc, char** argv )
 
     cv::waitKey(0);
     return(0);
+    */
+
+    ///TEST TRACKING PROGRAM
+    cv::VideoCapture cap(0); //capture the video from web cam
+
+    if ( !cap.isOpened() )  // if not success, exit program
+    {
+         std::cout << "Cannot open the web cam" << std::endl;
+         return -1;
+    }
+
+    cv::namedWindow("Control", CV_WINDOW_AUTOSIZE); //create a window called "Control"
+
+    int iLowH = 0;
+    int iHighH = 179;
+
+    int iLowS = 0;
+    int iHighS = 255;
+
+    int iLowV = 0;
+    int iHighV = 255;
+
+
+    //Create trackbars in "Control" window
+    cvCreateTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
+    cvCreateTrackbar("HighH", "Control", &iHighH, 179);
+
+    cvCreateTrackbar("LowS", "Control", &iLowS, 255); //Saturation (0 - 255)
+    cvCreateTrackbar("HighS", "Control", &iHighS, 255);
+
+    cvCreateTrackbar("LowV", "Control", &iLowV, 255); //Value (0 - 255)
+    cvCreateTrackbar("HighV", "Control", &iHighV, 255);
+
+    while (true)
+    {
+        cv::Mat imgOriginal;
+
+        bool bSuccess = cap.read(imgOriginal); // read a new frame from video
+
+        if (!bSuccess) //if not success, break loop
+        {
+             std::cout << "Cannot read a frame from video stream" << std::endl;
+             break;
+        }
+
+        cv::Mat imgHSV;
+
+        cv::cvtColor(imgOriginal, imgHSV, cv::COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
+
+        cv::Mat imgThresholded;
+
+        cv::inRange(imgHSV, cv::Scalar(iLowH, iLowS, iLowV), cv::Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
+
+        //morphological opening (remove small objects from the foreground)
+        cv::erode(imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
+        cv::dilate( imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
+
+       //morphological closing (fill small holes in the foreground)
+        cv::dilate( imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
+        cv::erode(imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
+
+        cv::imshow("Thresholded Image", imgThresholded); //show the thresholded image
+        cv::imshow("Original", imgOriginal); //show the original image
+
+        if (cv::waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
+        {
+            std::cout << "esc key is pressed by user" << std::endl;
+            break;
+        }
+    }
+
+    return 0;
 
 
 }
