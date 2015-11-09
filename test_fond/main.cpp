@@ -2,10 +2,12 @@
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
 #include <iostream>
+#include <windows.h>
 
 using namespace std;
 
-int main( int argc, char** argv )
+//int main( int argc, char** argv )
+int main()
 {
 
     /// INITIAL TEST PROGRAM
@@ -214,7 +216,7 @@ int main( int argc, char** argv )
     */
 
     ///PERSONAL TEST
-
+    /*
     if(argc != 2)
     {
         std::cout<<"wrong number of input arguments"<<std::endl;
@@ -276,5 +278,64 @@ int main( int argc, char** argv )
         }
     }
 
+    return 0;
+    */
+
+    ///TEST AVEC VIDEO DATA
+
+    int nbTrames = 500;
+    int threshold = 60;
+    cv::Mat sequence[nbTrames];     //the sequence of images for the video
+    cv::Mat sequenceGray[nbTrames];
+    cv::Mat sequenceBinary[nbTrames];
+    cv::Mat sequenceDiff[nbTrames];
+
+    for(int i =0;i<nbTrames;i++)
+    {
+        std::stringstream nameTrame;
+        if(i<10)
+        {
+            nameTrame << "Data/tracking_000" << i << ".jpeg";
+        }
+        else if(i<100)
+        {
+            nameTrame << "Data/tracking_00" << i << ".jpeg";
+        }
+        else
+        {
+            nameTrame << "Data/tracking_0" << i << ".jpeg";
+        }
+
+        std::cout<<nameTrame.str()<<std::endl;
+
+        sequence[i] = cv::imread(nameTrame.str());
+    }
+
+    cv::namedWindow("Video", cv::WINDOW_AUTOSIZE);
+
+
+    for(int i=0;i<nbTrames;i++)
+    {
+
+        //process
+
+        cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
+        cv::threshold(sequenceGray[i], sequenceBinary[i], threshold, 255, 1);
+        cv::absdiff(sequenceBinary[0], sequenceBinary[i], sequenceDiff[i]);
+
+        cv::erode(sequenceDiff[i], sequenceDiff[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(4,4)));
+
+        //end of the process
+
+        cv::imshow("Video", sequenceDiff[i]);
+
+        if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
+        {
+            std::cout << "esc key is pressed by user" << std::endl;
+            return 0;
+        }
+    }
+
+    cv::waitKey(0);
     return 0;
 }
