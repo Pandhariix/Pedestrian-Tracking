@@ -6,6 +6,10 @@ CONFIG -= qt
 INCLUDEPATH += C:/opencv/build/install/include
 LIBS += "C:/opencv/build/bin/*.dll"
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    watershedsegmenter.cpp
+
+HEADERS += \
+    watershedsegmenter.h
 
 

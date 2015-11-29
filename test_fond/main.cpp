@@ -1,295 +1,66 @@
+/**
+  * Methode par différence de fond : OK
+  * Methode de bloc matching : Pas encore implemente
+  *
+  **/
+
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
+
 #include <iostream>
-#include <windows.h>
+#include <watershedsegmenter.h>
 
-using namespace std;
-
-//int main( int argc, char** argv )
 int main()
 {
 
-    /// INITIAL TEST PROGRAM
-    /*
-    if( argc != 2)
-    {
-     std::cout <<" Usage: display_image ImageToLoadAndDisplay" << std::endl;
-     return -1;
-    }
-
-    cv::Mat image;
-    image = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);   // Read the file
-
-    if(! image.data )                              // Check for invalid input
-    {
-        std::cout <<  "Could not open or find the image" << std::endl ;
-        return -1;
-    }
-
-    cv::Mat imageGray;
-
-    //convert RGB to gray
-    cv::cvtColor(image, imageGray, CV_BGR2GRAY);
-
-
-    cv::Mat binary;
-
-    //convert gray to binary
-    cv::threshold( imageGray, binary, 20, 255,1);
-
-
-    cv::Mat imageFinale;
-
-    // Create a structuring element
-    int erosion_size = 8;
-    cv::Mat element = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(2 * erosion_size + 1, 2 * erosion_size + 1), cv::Point(erosion_size, erosion_size) );
-
-
-    cv::erode(binary,imageFinale,element);
-    cv::dilate(imageFinale,imageFinale,element);
-
-    cv::namedWindow( "Original", cv::WINDOW_AUTOSIZE );// Create a window for display.
-    cv::imshow( "Original", image);                   // Show our image inside it.
-
-    cv::namedWindow( "Finale", cv::WINDOW_AUTOSIZE );// Create a window for display.
-    cv::imshow( "Finale", imageFinale);
-
-    cv::waitKey(0);                                          // Wait for a keystroke in the window
-    return 0;
-    */
-
-    ///OFFICIAL TEST FOND PROGRAM
-    /*
-    if(argc != 3)
-    {
-        std::cout<<"unable to launch the program, please enter correct input arguments"<<std::endl;
-        return -1;
-    }
-
-    //init the matrix
-    cv::Mat imageFond;
-    cv::Mat imageCompare;
-    cv::Mat imageFondGray;
-    cv::Mat imageCompareGray;
-    cv::Mat imageFondBinary;
-    cv::Mat imageCompareBinary;
-    cv::Mat imageDiff;
-
-    imageFond = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);
-    imageCompare = cv::imread(argv[2], CV_LOAD_IMAGE_COLOR);
-
-    if(!imageFond.data || !imageCompare.data)
-    {
-        std::cout<<"at least one of the images can not be read"<<std::endl;
-        return -1;
-    }
-
-    //convert both images to grayscale
-
-    cv::cvtColor(imageFond, imageFondGray, CV_BGR2GRAY);
-    cv::cvtColor(imageCompare, imageCompareGray, CV_BGR2GRAY);
-
-    //convert both images to binary
-
-    cv::threshold( imageFondGray, imageFondBinary, 20, 255,1);
-    cv::threshold(imageCompareGray, imageCompareBinary, 20, 255, 1);
-
-    //difference between the two images
-    cv::absdiff(imageFondBinary, imageCompareBinary, imageDiff);
-
-    //display
-    cv::namedWindow( "test_fond", cv::WINDOW_AUTOSIZE );// Create a window for display.
-    cv::imshow( "test_fond", imageDiff);
-
-    cv::waitKey(0);
-    return(0);
-    */
-
-    ///TEST TRACKING OF A RED OBJECT PROGRAM
-    /*
-    cv::VideoCapture cap(0); //capture the video from webcam
-
-    if ( !cap.isOpened() )  // if not success, exit program
-    {
-         std::cout << "Cannot open the web cam" << std::endl;
-         return -1;
-    }
-
-    cv::namedWindow("Control", CV_WINDOW_AUTOSIZE); //create a window called "Control"
-
-    int iLowH = 170;
-    int iHighH = 179;
-
-    int iLowS = 150;
-    int iHighS = 255;
-
-    int iLowV = 60;
-    int iHighV = 255;
-
-    //Create trackbars in "Control" window
-    cv::createTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
-    cv::createTrackbar("HighH", "Control", &iHighH, 179);
-
-    cv::createTrackbar("LowS", "Control", &iLowS, 255); //Saturation (0 - 255)
-    cv::createTrackbar("HighS", "Control", &iHighS, 255);
-
-    cv::createTrackbar("LowV", "Control", &iLowV, 255);//Value (0 - 255)
-    cv::createTrackbar("HighV", "Control", &iHighV, 255);
-
-    int iLastX = -1;
-    int iLastY = -1;
-
-    //Capture a temporary image from the camera
-    cv::Mat imgTmp;
-    cap.read(imgTmp);
-
-    //Create a black image with the size as the camera output
-    cv::Mat imgLines = cv::Mat::zeros( imgTmp.size(), CV_8UC3 );;
-
-
-    while (true)
-    {
-        cv::Mat imgOriginal;
-
-        bool bSuccess = cap.read(imgOriginal); // read a new frame from video
-
-        if (!bSuccess) //if not success, break loop
-        {
-            std::cout << "Cannot read a frame from video stream" << std::endl;
-            break;
-        }
-
-        cv::Mat imgHSV;
-
-        cv::cvtColor(imgOriginal, imgHSV, cv::COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
-
-        cv::Mat imgThresholded;
-
-        cv::inRange(imgHSV, cv::Scalar(iLowH, iLowS, iLowV), cv::Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
-
-        //morphological opening (removes small objects from the foreground)
-        cv::erode(imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
-        cv::dilate( imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
-
-        //morphological closing (removes small holes from the foreground)
-        cv::dilate( imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
-        cv::erode(imgThresholded, imgThresholded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5)) );
-
-        //Calculate the moments of the thresholded image
-        cv::Moments oMoments = cv::moments(imgThresholded);
-
-        double dM01 = oMoments.m01;
-        double dM10 = oMoments.m10;
-        double dArea = oMoments.m00;
-
-         // if the area <= 10000, I consider that the there are no object in the image and it's because of the noise, the area is not zero
-        if (dArea > 10000)
-        {
-            //calculate the position of the ball
-            int posX = dM10 / dArea;
-            int posY = dM01 / dArea;
-
-            if (iLastX >= 0 && iLastY >= 0 && posX >= 0 && posY >= 0)
-            {
-                //Draw a red line from the previous point to the current point
-                cv::line(imgLines, cv::Point(posX, posY), cv::Point(iLastX, iLastY), cv::Scalar(0,0,255), 2);
-            }
-
-            iLastX = posX;
-            iLastY = posY;
-        }
-
-        cv::imshow("Thresholded Image", imgThresholded); //show the thresholded image
-
-        imgOriginal = imgOriginal + imgLines;
-        cv::imshow("Original", imgOriginal); //show the original image
-
-        if (cv::waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
-        {
-            std::cout << "esc key is pressed by user" << std::endl;
-            break;
-        }
-    }
-
-    return 0;
-    */
-
-    ///PERSONAL TEST
-    /*
-    if(argc != 2)
-    {
-        std::cout<<"wrong number of input arguments"<<std::endl;
-        return -1;
-    }
-
-    cv::VideoCapture cap(0); //capture the video from webcam
-
-    if ( !cap.isOpened() )  // if not success, exit program
-    {
-         std::cout << "Cannot open the web cam" << std::endl;
-         return -1;
-    }
-
-    int thres = (int)(argv[1]);
-
-    cv::Mat imgOriginal;
-    cv::Mat imgOriginalGray;
-    cv::Mat img;
-    cv::Mat imgGray;
-    cv::Mat imgDiff;
-
-    bool bSuccess = false;
-
-    bSuccess = cap.read(imgOriginal);
-    if (!bSuccess) //if not success, exit
-    {
-        std::cout << "Cannot read a frame from video stream" << std::endl;
-        return 0;
-    }
-
-    cv::cvtColor(imgOriginal, imgOriginalGray, CV_BGR2GRAY); //Convert the captured frame from BGR to gray
-
-
-    while(true)
-    {
-
-
-        bSuccess = cap.read(img); // read a new frame from video
-
-        if (!bSuccess) //if not success, break loop
-        {
-            std::cout << "Cannot read a frame from video stream" << std::endl;
-            break;
-        }
-
-        cv::cvtColor(img, imgGray, CV_BGR2GRAY); //Convert the captured frame from BGR to gray
-
-        cv::absdiff(imgGray, imgOriginalGray, imgDiff);
-
-        cv::threshold(imgDiff, imgDiff, thres, 255, 4);
-
-        cv::imshow("Image", imgDiff);
-
-        if (cv::waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
-        {
-            std::cout << "esc key is pressed by user" << std::endl;
-            break;
-        }
-    }
-
-    return 0;
-    */
-
     ///TEST AVEC VIDEO DATA
 
-    int nbTrames = 500;
-    int threshold = 60;
+    //variables images et masque
+    int nbTrames = 501;
+    int threshold = 30;
     cv::Mat sequence[nbTrames];     //the sequence of images for the video
     cv::Mat sequenceGray[nbTrames];
+    cv::Mat sequenceGrayDiff[nbTrames];
     cv::Mat sequenceBinary[nbTrames];
-    cv::Mat sequenceDiff[nbTrames];
+    cv::Mat sequenceBinaryErodeDilate[nbTrames];
+    cv::Mat sequenceMask[nbTrames];
+    cv::Mat sequenceEdges[nbTrames];
+    cv::Mat sequenceMarkers[nbTrames];
 
+    WatershedSegmenter segmenter;
+
+    //variables detection de points d'interets
+    std::vector <cv::Point2f> corners;
+    int maxCorners = 100;
+    double qualityLevel = 0.01;
+    double minDistance = 20.;
+
+    int blockSize = 3;
+    bool useHarrisDetector = false;
+    double k = 0.04;
+
+    //variables pour histogramme
+    int histSize = 256;
+    float range[] = {0,256};
+    const float* histRange = {range};
+    std::vector<cv::Mat> bgr_planes[nbTrames];
+
+    bool uniform = true;
+    bool accumulate = false;
+
+    cv::Mat b_hist[nbTrames];
+    cv::Mat g_hist[nbTrames];
+    cv::Mat r_hist[nbTrames];
+
+    int hist_w = 512;
+    int hist_h = 400;
+    int bin_w = cvRound((double) hist_w/histSize);
+
+    cv::Mat histImage( hist_h, hist_w, CV_8UC3, cv::Scalar( 0,0,0) );
+
+
+    //acquisition de la video
     for(int i =0;i<nbTrames;i++)
     {
         std::stringstream nameTrame;
@@ -309,33 +80,85 @@ int main()
         std::cout<<nameTrame.str()<<std::endl;
 
         sequence[i] = cv::imread(nameTrame.str());
+
+        //split les composantes de l'image pour le calcul de l'histogramme
+        cv::split(sequence[i], bgr_planes[i]);
+
+        // Compute the histograms:
+        cv::calcHist( &bgr_planes[i][0], 1, 0, cv::Mat(), b_hist[i], 1, &histSize, &histRange, uniform, accumulate );
+        cv::calcHist( &bgr_planes[i][1], 1, 0, cv::Mat(), g_hist[i], 1, &histSize, &histRange, uniform, accumulate );
+        cv::calcHist( &bgr_planes[i][2], 1, 0, cv::Mat(), r_hist[i], 1, &histSize, &histRange, uniform, accumulate );
+
+        //normalise les histogrammes
+        cv::normalize(b_hist[i], b_hist[i], 0, histImage.rows, cv::NORM_MINMAX, -1, cv::Mat());
+        cv::normalize(g_hist[i], g_hist[i], 0, histImage.rows, cv::NORM_MINMAX, -1, cv::Mat());
+        cv::normalize(r_hist[i], r_hist[i], 0, histImage.rows, cv::NORM_MINMAX, -1, cv::Mat());
+
     }
 
     cv::namedWindow("Video", cv::WINDOW_AUTOSIZE);
+    //cv::namedWindow("Histogramme", cv::WINDOW_AUTOSIZE);
 
-
+    //traitement sur la video
     for(int i=0;i<nbTrames;i++)
     {
 
-        //process
+        cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY); //passage en gris
+        cv::absdiff(sequenceGray[0], sequenceGray[i], sequenceGrayDiff[i]); // différence des images
+        cv::threshold(sequenceGrayDiff[i], sequenceBinary[i], threshold, 255, 1); //seuillage pour avoir notre masque
+        cv::bitwise_not(sequenceBinary[i], sequenceBinary[i]); //on met nos zones d'intérêt en blanc
 
-        cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
-        cv::threshold(sequenceGray[i], sequenceBinary[i], threshold, 255, 1);
-        cv::absdiff(sequenceBinary[0], sequenceBinary[i], sequenceDiff[i]);
+        cv::erode(sequenceBinary[i], sequenceBinaryErodeDilate[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,6)));   //erosion pour annuler le bruit du au vent
+        cv::dilate(sequenceBinaryErodeDilate[i], sequenceBinaryErodeDilate[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(20,20))); // dilatation pour augmenter la taille des régions d'intérêt de notre masque
+        cv::min(sequenceBinaryErodeDilate[i], sequenceBinary[i], sequenceMask[i]);
 
-        cv::erode(sequenceDiff[i], sequenceDiff[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(4,4)));
+        ///Good features to track
 
-        //end of the process
+        //detection des points d'interet
+        cv::goodFeaturesToTrack( sequenceGray[i], corners, maxCorners, qualityLevel, minDistance, sequenceMask[i], blockSize, useHarrisDetector, k );
 
-        cv::imshow("Video", sequenceDiff[i]);
+        //placement des points d'interêts sur l'image POUR LE DEBUG
+        for(size_t j = 0; j < corners.size(); j++)
+        {
+            cv::circle(sequence[i], corners[j], 1, cv::Scalar(0,255,0),-1);
+        }
 
+
+        ///Dessiner pour chaque canal de couleur histogramme
+
+        for( int j = 1; j < histSize; j++ )
+        {
+            cv::line( histImage, cv::Point( bin_w*(j-1), hist_h - cvRound(b_hist[i].at<float>(j-1)) ), cv::Point( bin_w*(j), hist_h - cvRound(b_hist[i].at<float>(j)) ), cv::Scalar( 255, 0, 0), 2, 8, 0  );
+            cv::line( histImage, cv::Point( bin_w*(j-1), hist_h - cvRound(g_hist[i].at<float>(j-1)) ), cv::Point( bin_w*(j), hist_h - cvRound(g_hist[i].at<float>(j)) ), cv::Scalar( 0, 255, 0), 2, 8, 0  );
+            cv::line( histImage, cv::Point( bin_w*(j-1), hist_h - cvRound(r_hist[i].at<float>(j-1)) ), cv::Point( bin_w*(j), hist_h - cvRound(r_hist[i].at<float>(j)) ), cv::Scalar( 0, 0, 255), 2, 8, 0  );
+        }
+
+
+        /*
+        if(i!=0)
+        {
+            cv::Canny(sequenceMask[i], sequenceEdges[i], 30, 100, 3, false);
+            cv::connectedComponents(sequenceMask[i], sequenceMarkers[i], 8, 4);
+        }
+        */
+
+
+        //affichage de la video
+        cv::imshow("Video", sequence[i]);
+
+        //cv::imshow("Histogramme", histImage);
+
+        //on efface le vecteur contenant les points d'intérêts
+        corners.clear();
+
+        //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
         {
             std::cout << "esc key is pressed by user" << std::endl;
             return 0;
         }
     }
-
     cv::waitKey(0);
     return 0;
+
 }
