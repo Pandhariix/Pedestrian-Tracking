@@ -11,12 +11,15 @@
 #include <iostream>
 #include <watershedsegmenter.h>
 
-int main()
+int main(int argc, char *argv[])
 {
 
     ///TEST AVEC VIDEO DATA
 
     //variables images et masque
+
+    std::string inputFileName(argv[1]);
+
     int nbTrames = 501;
     int threshold = 30;
     cv::Mat sequence[nbTrames];     //the sequence of images for the video
@@ -73,15 +76,15 @@ int main()
         std::stringstream nameTrame;
         if(i<10)
         {
-            nameTrame << "Data/tracking_000" << i << ".jpeg";
+            nameTrame << inputFileName << "_000" << i << ".jpeg";
         }
         else if(i<100)
         {
-            nameTrame << "Data/tracking_00" << i << ".jpeg";
+            nameTrame << inputFileName << "_00" << i << ".jpeg";
         }
         else
         {
-            nameTrame << "Data/tracking_0" << i << ".jpeg";
+            nameTrame << inputFileName << "_0" << i << ".jpeg";
         }
 
         std::cout<<nameTrame.str()<<std::endl;
