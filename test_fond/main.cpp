@@ -25,10 +25,17 @@ int main()
     cv::Mat sequenceBinary[nbTrames];
     cv::Mat sequenceBinaryErodeDilate[nbTrames];
     cv::Mat sequenceMask[nbTrames];
-    cv::Mat sequenceEdges[nbTrames];
-    cv::Mat sequenceMarkers[nbTrames];
 
-    WatershedSegmenter segmenter;
+    std::vector<std::vector<cv::Point> > contours; //detection des contours
+    std::vector<cv::Vec4i> hierarchy;
+
+    std::vector<std::vector<cv::Point> > contours_poly; // dessin des rectangles englobants
+    std::vector<cv::Rect> boundRect;
+    cv::Mat drawing[nbTrames];
+    cv::RNG rng(12345);
+
+    cv::Mat sequenceEdges[nbTrames];
+
 
     //variables detection de points d'interets
     std::vector <cv::Point2f> corners;
@@ -105,15 +112,14 @@ int main()
 
         cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY); //passage en gris
         cv::absdiff(sequenceGray[0], sequenceGray[i], sequenceGrayDiff[i]); // différence des images
-        cv::threshold(sequenceGrayDiff[i], sequenceBinary[i], threshold, 255, 1); //seuillage pour avoir notre masque
-        cv::bitwise_not(sequenceBinary[i], sequenceBinary[i]); //on met nos zones d'intérêt en blanc
+        cv::threshold(sequenceGrayDiff[i], sequenceBinary[i], threshold, 255, cv::THRESH_BINARY); //seuillage pour avoir notre masque
 
-        cv::erode(sequenceBinary[i], sequenceBinaryErodeDilate[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,6)));   //erosion pour annuler le bruit du au vent
-        cv::dilate(sequenceBinaryErodeDilate[i], sequenceBinaryErodeDilate[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(20,20))); // dilatation pour augmenter la taille des régions d'intérêt de notre masque
-        cv::min(sequenceBinaryErodeDilate[i], sequenceBinary[i], sequenceMask[i]);
+        cv::erode(sequenceBinary[i], sequenceMask[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,6)));   //erosion pour annuler le bruit du au vent
+        cv::dilate(sequenceMask[i], sequenceMask[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(30,60))); // dilatation pour augmenter la taille des régions d'intérêt de notre masque
+        cv::erode(sequenceMask[i], sequenceMask[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,12)));   //erosion pour annuler le bruit du au vent
 
         ///Good features to track
-
+        /*
         //detection des points d'interet
         cv::goodFeaturesToTrack( sequenceGray[i], corners, maxCorners, qualityLevel, minDistance, sequenceMask[i], blockSize, useHarrisDetector, k );
 
@@ -122,7 +128,7 @@ int main()
         {
             cv::circle(sequence[i], corners[j], 1, cv::Scalar(0,255,0),-1);
         }
-
+        */
 
         ///Dessiner pour chaque canal de couleur histogramme
 
@@ -134,18 +140,27 @@ int main()
         }
 
 
-        /*
-        if(i!=0)
-        {
-            cv::Canny(sequenceMask[i], sequenceEdges[i], 30, 100, 3, false);
-            cv::connectedComponents(sequenceMask[i], sequenceMarkers[i], 8, 4);
-        }
-        */
+        cv::findContours(sequenceMask[i], contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE, cv::Point(0,0));
 
+        contours_poly.resize(contours.size());
+        boundRect.resize(contours.size());
+
+        for( size_t j = 0; j < contours.size(); j++ )
+        {
+            cv::approxPolyDP(cv::Mat(contours[j]), contours_poly[j], 3, true);
+            boundRect[j] = cv::boundingRect(cv::Mat(contours_poly[j]));
+        }
+
+        drawing[i] = cv::Mat::zeros(sequenceBinaryErodeDilate[i].size(), CV_8UC3);
+
+        for( size_t j = 0; j< contours.size(); j++ )
+        {
+            cv::drawContours(drawing[i], contours_poly, (int)j, cv::Scalar( 0, 0, 255), 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point());
+            cv::rectangle( sequence[i], boundRect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
+        }
 
         //affichage de la video
         cv::imshow("Video", sequence[i]);
-
         //cv::imshow("Histogramme", histImage);
 
         //on efface le vecteur contenant les points d'intérêts
