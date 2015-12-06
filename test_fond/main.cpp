@@ -9,6 +9,7 @@
 #include "opencv2/videoio.hpp"
 #include <opencv2/highgui.hpp>
 #include <opencv2/video.hpp>
+#include <opencv2/video/background_segm.hpp>
 
 #include <iostream>
 #include <watershedsegmenter.h>
@@ -22,14 +23,13 @@ int main(int argc, char *argv[])
         std::cout<<"Veuillez rentrer un parametre"<<std::endl;
         std::exit(EXIT_FAILURE);
     }
-    std::cout<<argc<<std::endl;
 
     //variables images et masque
 
     std::string inputFileName(argv[1]);
 
     int nbTrames = 501;
-    int threshold = 40;
+    int threshold = 150;
 
     cv::Mat sequence[nbTrames];     //the sequence of images for the video
     cv::Mat sequenceGrayDiff[nbTrames];
@@ -42,9 +42,10 @@ int main(int argc, char *argv[])
     std::vector<std::vector<cv::Point> > contours_poly; // dessin des rectangles englobants
     std::vector<cv::Rect> boundRect;
     cv::Mat drawing[nbTrames];
-    cv::RNG rng(12345);
 
-    cv::Ptr<cv::BackgroundSubtractorMOG2> pMOG2; //MOG2 Background subtractor
+    std::vector<cv::Mat> roi;
+
+    cv::Ptr<cv::BackgroundSubtractor> pMOG2;
     pMOG2 = cv::createBackgroundSubtractorMOG2();
 
     //variables detection de points d'interets
@@ -161,6 +162,7 @@ int main(int argc, char *argv[])
         {
             cv::approxPolyDP(cv::Mat(contours[j]), contours_poly[j], 3, true);
             boundRect[j] = cv::boundingRect(cv::Mat(contours_poly[j]));
+            roi.push_back(sequence[i](boundRect[j])); // les ROI sont placées dans un vecteur
         }
 
         drawing[i] = cv::Mat::zeros(sequenceMask[i].size(), CV_8UC3);
@@ -170,6 +172,8 @@ int main(int argc, char *argv[])
             cv::drawContours(drawing[i], contours_poly, (int)j, cv::Scalar( 0, 0, 255), 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point());
             cv::rectangle(sequence[i], boundRect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
         }
+
+
 
         //affichage de la video
         cv::imshow("Video", sequence[i]);
@@ -181,6 +185,7 @@ int main(int argc, char *argv[])
         //corners.clear();
         contours_poly.clear();
         boundRect.clear();
+        roi.clear();
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
