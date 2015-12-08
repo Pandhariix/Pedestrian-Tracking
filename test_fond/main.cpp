@@ -169,6 +169,7 @@ int main(int argc, char *argv[])
         {
             cv::drawContours(drawing[i], contours_poly, (int)j, cv::Scalar( 0, 0, 255), 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point());
             cv::rectangle(sequence[i], boundRect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
+            cv::putText(sequence[i], "ROI "+std::to_string(j), cv::Point(boundRect[j].x, boundRect[j].y), cv::FONT_HERSHEY_PLAIN, 1.0, CV_RGB(0,255,0), 2.0);
         }
 
         // Calcul des histogrammes des roi et comparaison de ces ROI
