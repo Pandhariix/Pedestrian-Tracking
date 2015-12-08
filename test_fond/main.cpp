@@ -43,8 +43,17 @@ int main(int argc, char *argv[])
     std::vector<cv::Rect> boundRect;
     cv::Mat drawing[nbTrames];
 
-    std::vector<cv::Mat> roi;
+    std::vector<cv::Mat> roi; //roi et histogrammes
+    int histSize = 256;
+    float range[] = {0,256};
+    const float* histRange = {range};
+    std::vector<std::vector<cv::Mat> > bgr_planes;
 
+    std::vector<cv::MatND> histogramB;
+    std::vector<cv::MatND> histogramG;
+    std::vector<cv::MatND> histogramR;
+
+    // soustracteur de fond
     cv::Ptr<cv::BackgroundSubtractor> pMOG2;
     pMOG2 = cv::createBackgroundSubtractorMOG2();
 
@@ -118,7 +127,7 @@ int main(int argc, char *argv[])
 
     }
     cv::namedWindow("Video", cv::WINDOW_AUTOSIZE);
-    //cv::namedWindow("Polygones", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("Polygones", cv::WINDOW_AUTOSIZE);
     //cv::namedWindow("Histogramme", cv::WINDOW_AUTOSIZE);
 
     //traitement sur la video
@@ -131,17 +140,6 @@ int main(int argc, char *argv[])
         cv::dilate(sequenceMask[i], sequenceMask[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(30,60))); // dilatation pour augmenter la taille des régions d'intérêt de notre masque
         cv::erode(sequenceMask[i], sequenceMask[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3,6)));   //erosion pour annuler le bruit du au vent
 
-        ///Good features to track
-        /*
-        //detection des points d'interet
-        cv::goodFeaturesToTrack( sequenceGray[i], corners, maxCorners, qualityLevel, minDistance, sequenceMask[i], blockSize, useHarrisDetector, k );
-
-        //placement des points d'interêts sur l'image POUR LE DEBUG
-        for(size_t j = 0; j < corners.size(); j++)
-        {
-            cv::circle(sequence[i], corners[j], 1, cv::Scalar(0,255,0),-1);
-        }
-        */
 
         ///Dessiner pour chaque canal de couleur histogramme
         /*
@@ -173,12 +171,33 @@ int main(int argc, char *argv[])
             cv::rectangle(sequence[i], boundRect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
         }
 
+        // Calcul des histogrammes des roi et comparaison de ces ROI
+        if(roi.size()!=0)
+        {
+            bgr_planes.resize(roi.size());
+            histogramB.resize(roi.size());
+            histogramG.resize(roi.size());
+            histogramR.resize(roi.size());
 
+            for(unsigned int j=0;j<roi.size();j++)
+            {
+                cv::split(roi[j], bgr_planes[j]);
+
+                cv::calcHist(&bgr_planes[j][0], 1, 0, cv::Mat(), histogramB[j], 1, &histSize, &histRange, true, false);
+                cv::calcHist(&bgr_planes[j][1], 1, 0, cv::Mat(), histogramG[j], 1, &histSize, &histRange, true, false);
+                cv::calcHist(&bgr_planes[j][2], 1, 0, cv::Mat(), histogramR[j], 1, &histSize, &histRange, true, false);
+
+                cv::normalize(histogramB[j], histogramB[j], 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+                cv::normalize(histogramG[j], histogramG[j], 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+                cv::normalize(histogramR[j], histogramR[j], 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+
+                std::cout<<cv::compareHist(histogramB[j], histogramB[0], CV_COMP_BHATTACHARYYA)<<std::endl;
+            }
+        }
 
         //affichage de la video
         cv::imshow("Video", sequence[i]);
         cv::imshow("Polygones", drawing[i]);
-        std::cout<<contours_poly.size()<<std::endl;
         //cv::imshow("Histogramme", histImage);
 
         //on efface le vecteur contenant les points d'intérêts
@@ -186,6 +205,10 @@ int main(int argc, char *argv[])
         contours_poly.clear();
         boundRect.clear();
         roi.clear();
+        bgr_planes.clear();
+        histogramB.clear();
+        histogramG.clear();
+        histogramR.clear();
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
