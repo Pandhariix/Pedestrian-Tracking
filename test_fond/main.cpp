@@ -268,7 +268,6 @@ int main(int argc, char *argv[])
         */
 
         // dessins sur l'image finale
-
         for( size_t j = 0; j< contours.size(); j++ )
         {
             cv::drawContours(drawing[i], contours_poly, (int)j, cv::Scalar( 0, 0, 255), 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point());
