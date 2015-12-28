@@ -15,6 +15,32 @@
 #include <iostream>
 #include <watershedsegmenter.h>
 
+enum TrackingMethod {GOOD_FEATURES_TO_TRACK,
+                     LUCAS_KANADE_TRACKING,
+                     NOTHING_TO_TRACK};
+
+TrackingMethod chooseTrackingMethod(int nbRoi, int nbRoiPreviousFrame)
+{
+    if(nbRoi == 0)
+    {
+        return NOTHING_TO_TRACK;
+    }
+    else if(nbRoi > nbRoiPreviousFrame)
+    {
+        return GOOD_FEATURES_TO_TRACK;
+    }
+    else if(nbRoi == nbRoiPreviousFrame)
+    {
+        return LUCAS_KANADE_TRACKING; //TODO probleme initialisation
+    }
+    else
+    {
+        return LUCAS_KANADE_TRACKING;
+    }
+}
+
+
+
 int main(int argc, char *argv[])
 {
 
@@ -43,11 +69,22 @@ int main(int argc, char *argv[])
 
     std::vector<std::vector<cv::Point> > contours_poly; // dessin des rectangles englobants
     std::vector<cv::Rect> boundRect;
-    cv::Mat drawing[nbTrames];
 
     cv::Mat maskTemp;
     cv::Mat roiMask;
     std::vector<cv::Mat> mask;
+
+    int nbRoiPreviousFrame = 0;
+
+    TrackingMethod choiceTracking = NOTHING_TO_TRACK;
+
+    //Lucas Kanade recalage
+    cv::Mat previousSequenceGray;
+    std::vector<uchar> status;
+    std::vector<float> err;
+
+    //dessin des rectangles
+    std::vector<cv::Rect> rect;
 
     // soustracteur de fond
     cv::Ptr<cv::BackgroundSubtractor> pMOG2;
@@ -55,7 +92,8 @@ int main(int argc, char *argv[])
 
     //variables detection de points d'interets
     std::vector<std::vector<cv::Point2f>> corners;
-    int maxCorners = 100;
+    std::vector<std::vector<cv::Point2f>> previousCorners;
+    int maxCorners = 50;
     double qualityLevel = 0.01;
     double minDistance = 2.;
 
@@ -65,7 +103,7 @@ int main(int argc, char *argv[])
 
 
     //acquisition de la video
-    for(int i =0;i<nbTrames;i++)
+    for(int i=0;i<nbTrames;i++)
     {
         std::stringstream nameTrame;
         if(i<10)
@@ -92,6 +130,7 @@ int main(int argc, char *argv[])
     //traitement sur la video
     for(int i=0;i<nbTrames;i++)
     {
+        cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
 
         cv::threshold(sequenceGrayDiff[i], sequenceBinary[i], threshold, 255, cv::THRESH_BINARY); //seuillage pour avoir notre masque
 
@@ -118,19 +157,34 @@ int main(int argc, char *argv[])
             maskTemp(boundRect[j]).copyTo(roiMask);
         }
 
-        if(boundRect.size() != 0)
+        choiceTracking = chooseTrackingMethod(boundRect.size(),nbRoiPreviousFrame);
+        std::cout<<boundRect.size()<<" ROIs et methode "<<choiceTracking<<std::endl;
+
+        if(choiceTracking == GOOD_FEATURES_TO_TRACK)
         {
             //detection des points d'interet pour chaque bounding box
             corners.resize(boundRect.size());
-            cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
 
             for(size_t j=0;j<boundRect.size();j++)
             {
-                cv::goodFeaturesToTrack( sequenceGray[i], corners[j], maxCorners, qualityLevel, minDistance, mask[j], blockSize, useHarrisDetector, kdef);
+                cv::goodFeaturesToTrack(sequenceGray[i], corners[j], maxCorners, qualityLevel, minDistance, mask[j], blockSize, useHarrisDetector, kdef);
             }
+        }
+        else if(choiceTracking == LUCAS_KANADE_TRACKING)
+        {
+            corners.resize(boundRect.size());
 
-            //placement des points d'interêts sur l'image POUR LE DEBUG
             for(size_t j=0;j<boundRect.size();j++)
+            {
+                cv::calcOpticalFlowPyrLK(previousSequenceGray, sequenceGray[i], previousCorners[j], corners[j], status, err);
+            }
+        }
+
+        /*
+        if(choiceTracking != NOTHING_TO_TRACK)
+        {
+            //placement des points d'interêts sur l'image POUR LE DEBUG
+            for(size_t j=0;j<corners.size();j++)
             {
                 for(size_t k=0;k<corners[j].size();k++)
                 {
@@ -146,26 +200,48 @@ int main(int argc, char *argv[])
                 }
             }
         }
+        */
 
-        /*
         // dessins sur l'image finale
-
-        drawing[i] = cv::Mat::zeros(sequenceMask[i].size(), CV_8UC3);
-
-        for( size_t j = 0; j< contours.size(); j++ )
+        if(choiceTracking != NOTHING_TO_TRACK)
         {
-            cv::drawContours(drawing[i], contours_poly, (int)j, cv::Scalar( 0, 0, 255), 1, 8, std::vector<cv::Vec4i>(), 0, cv::Point());
-            cv::rectangle(sequence[i], boundRect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
-            cv::putText(sequence[i], "ROI "+std::to_string(j), cv::Point(boundRect[j].x, boundRect[j].y), cv::FONT_HERSHEY_PLAIN, 1.0, CV_RGB(0,255,0), 2.0);
+            rect.resize(corners.size());
+
+            for( size_t j = 0; j< corners.size(); j++ )
+            {
+                rect[j] = cv::boundingRect(corners[j]);
+                cv::rectangle(sequence[i], rect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
+                cv::putText(sequence[i], "ROI", cv::Point(rect[j].x, rect[j].y), cv::FONT_HERSHEY_PLAIN, 1.0, CV_RGB(0,255,0), 2.0);
+            }
         }
 
-        */
 
         //affichage de la video
         cv::imshow("Video", sequence[i]);
 
+
+        //description de la frame pour la frame suivante
+        previousSequenceGray.release();
+
+        nbRoiPreviousFrame = contours.size();
+        previousSequenceGray = sequenceGray[i];
+
+        previousCorners.clear();
+        previousCorners.resize(corners.size());
+        previousCorners = corners;
+
         //nettoyage des variables
+        contours.clear();
+        hierarchy.clear();
+        contours_poly.clear();
+        boundRect.clear();
         maskTemp.release();
+        roiMask.release();
+        mask.clear();
+        status.clear();
+        err.clear();
+        corners.clear();
+        rect.clear();
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
