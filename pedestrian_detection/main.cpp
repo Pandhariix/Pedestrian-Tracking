@@ -39,9 +39,9 @@ std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
 std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequenceGray, std::vector<cv::Rect> found_filtered)
 {
     std::vector<std::vector<cv::Point2f>> corners;
-    int maxCorners = 50;
+    int maxCorners = 25;
     double qualityLevel = 0.01;
-    double minDistance = 2.;
+    double minDistance = 1.;
     int blockSize = 3;
     bool useHarrisDetector = false;
     double kdef = 0.04;
@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
 
     cv::Mat sequence[nbTrames];     //the sequence of images for the video
     cv::Mat sequenceGray[nbTrames];
+    cv::Mat previousSequenceGray;
 
     int nbPedestrians = 0;
 
@@ -136,7 +137,13 @@ int main(int argc, char *argv[])
     {
         cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
 
-        if(previousFeaturesDetected.size() == 0)
+        if(i>0)
+            previousSequenceGray = sequenceGray[i-1];
+        else
+            previousSequenceGray = sequenceGray[i];
+
+
+        if(i%15 == 0)
         {
             detectedPedestrian = hogDetection(sequence[i], hog);
             nbPedestrians = detectedPedestrian.size();
@@ -148,22 +155,28 @@ int main(int argc, char *argv[])
                 previousFeaturesDetected = featuresDetected;
             }
         }
-        else
+        else if(previousFeaturesDetected.size() != 0)
         {
-            featuresDetected = lucasKanadeTracking(sequenceGray[i-1], sequenceGray[i], previousFeaturesDetected);
+            featuresDetected = lucasKanadeTracking(previousSequenceGray, sequenceGray[i], previousFeaturesDetected);
 
             previousFeaturesDetected.clear();
             previousFeaturesDetected.resize(featuresDetected.size());
             previousFeaturesDetected = featuresDetected;
         }
 
-
+        /*
         for(size_t j=0;j<featuresDetected.size();j++)
         {
             for(size_t k=0;k<featuresDetected[j].size();k++)
             {
                 cv::circle(sequence[i], featuresDetected[j][k], 1, cv::Scalar(0,0,255),-1);
             }
+        }
+        */
+
+        for(size_t j=0;j<featuresDetected.size();j++)
+        {
+            cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
         }
 
         //affichage de la video
@@ -172,6 +185,8 @@ int main(int argc, char *argv[])
         //clear des variables
         detectedPedestrian.clear();
         featuresDetected.clear();
+
+        previousSequenceGray.release();
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
