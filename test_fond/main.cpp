@@ -132,6 +132,7 @@ int main(int argc, char *argv[])
     {
         cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
 
+
         cv::threshold(sequenceGrayDiff[i], sequenceBinary[i], threshold, 255, cv::THRESH_BINARY); //seuillage pour avoir notre masque
 
         cv::erode(sequenceBinary[i], sequenceMask[i], cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,6)));   //erosion pour annuler le bruit du au vent
@@ -158,10 +159,6 @@ int main(int argc, char *argv[])
         }
 
         choiceTracking = chooseTrackingMethod(boundRect.size(),nbRoiPreviousFrame);
-
-        //DEBUG
-        std::cout<<boundRect.size()<<" ROIs et methode "<<choiceTracking<<std::endl;
-        //END DEBUG
 
         if(choiceTracking == GOOD_FEATURES_TO_TRACK)
         {
