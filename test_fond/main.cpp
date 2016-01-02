@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
 
         sequenceMask[i].copyTo(maskTemp);
 
-        cv::findContours(sequenceMask[i], contours, hierarchy, cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE, cv::Point(0,0));
+        cv::findContours(sequenceMask[i], contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE, cv::Point(0,0));
 
         contours_poly.resize(contours.size());
         boundRect.resize(contours.size());
@@ -158,7 +158,10 @@ int main(int argc, char *argv[])
         }
 
         choiceTracking = chooseTrackingMethod(boundRect.size(),nbRoiPreviousFrame);
+
+        //DEBUG
         std::cout<<boundRect.size()<<" ROIs et methode "<<choiceTracking<<std::endl;
+        //END DEBUG
 
         if(choiceTracking == GOOD_FEATURES_TO_TRACK)
         {
@@ -172,7 +175,7 @@ int main(int argc, char *argv[])
         }
         else if(choiceTracking == LUCAS_KANADE_TRACKING)
         {
-            corners.resize(boundRect.size());
+            corners.resize(previousCorners.size());
 
             for(size_t j=0;j<boundRect.size();j++)
             {
@@ -180,7 +183,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        /*
+
         if(choiceTracking != NOTHING_TO_TRACK)
         {
             //placement des points d'interêts sur l'image POUR LE DEBUG
@@ -200,7 +203,8 @@ int main(int argc, char *argv[])
                 }
             }
         }
-        */
+
+
 
         // dessins sur l'image finale
         if(choiceTracking != NOTHING_TO_TRACK)
