@@ -10,8 +10,105 @@
 #include <opencv2/video.hpp>
 #include <opencv2/video/background_segm.hpp>
 #include <opencv2/opencv.hpp>
+#include "opencv2/features2d/features2d.hpp"
+
 
 #include <iostream>
+
+enum formatVideo{SEQUENCE_IMAGE,
+                 VIDEO,
+                 NOT_DEFINED};
+
+
+
+/// Detection du format video et extraction des données
+
+formatVideo detectFormat(std::string argument)
+{
+    if(argument.compare("image") == 0)
+        return SEQUENCE_IMAGE;
+
+    else if(argument.compare("video") == 0)
+        return VIDEO;
+
+    else
+        return NOT_DEFINED;
+}
+
+
+
+std::vector<cv::Mat> extractVideoData(formatVideo format, std::string filePathName, int nbTrames)
+{
+    std::vector<cv::Mat> sequence;
+
+    if(format == SEQUENCE_IMAGE)
+    {
+        sequence.resize(nbTrames);
+
+        for(int i=0;i<nbTrames;i++)
+        {
+            std::stringstream nameTrame;
+            if(i<10)
+            {
+                nameTrame << filePathName << "_000" << i << ".jpeg";
+            }
+            else if(i<100)
+            {
+                nameTrame << filePathName << "_00" << i << ".jpeg";
+            }
+            else
+            {
+                nameTrame << filePathName << "_0" << i << ".jpeg";
+            }
+
+            std::cout<<nameTrame.str()<<std::endl;
+
+            sequence[i] = cv::imread(nameTrame.str());
+        }
+        return sequence;
+    }
+
+    else if(format == VIDEO)
+    {
+        cv::VideoCapture capture;
+        capture.open(filePathName);
+
+        if(capture.isOpened())
+        {
+            double fps = capture.get(CV_CAP_PROP_FPS);
+            int delay = 1000/fps;
+            int nbFrames = 0;
+
+            while(true)
+            {
+                if(!capture.read(sequence[nbFrames]))
+                    break;
+
+                if(cv::waitKey(delay)>=0)
+                    break;
+            }
+            capture.release();
+        }
+
+        else
+        {
+            std::cout<<"Impossible de lire la video : "<<filePathName<<std::endl;
+        }
+
+        return sequence;
+    }
+
+    else
+    {
+        std::cout<<"Argument incorrect, veuillez entrer 'image' ou 'video'"<<std::endl;
+        return sequence;
+    }
+}
+
+
+
+
+/// Detection via le HOG detector de opencv des piétons
 
 std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
 {
@@ -35,6 +132,10 @@ std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
     }
     return found_filtered;
 }
+
+
+
+///Corners detection (detection des corners via good features to track)
 
 std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequenceGray, std::vector<cv::Rect> found_filtered)
 {
@@ -61,6 +162,11 @@ std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequenceGray, st
     return corners;
 }
 
+
+
+
+/// Tracking des points d'interêts determinés avec méthode de Lucas Kanade
+
 std::vector<std::vector<cv::Point2f>> lucasKanadeTracking(cv::Mat previousSequenceGray, cv::Mat sequenceGray, std::vector<std::vector<cv::Point2f>> corners)
 {
     std::vector<std::vector<cv::Point2f>> newCorners;
@@ -77,24 +183,104 @@ std::vector<std::vector<cv::Point2f>> lucasKanadeTracking(cv::Mat previousSequen
 }
 
 
+
+
+
+/// Tracking avec méthode des templates
+
+std::vector<cv::Rect> templateTracking(cv::Mat sequence, std::vector<cv::Rect> foundFilteredTemplate, int matchingMethod)
+{
+    cv::Mat result;
+    std::vector<cv::Rect> roi;
+    int method;
+    double minVal;
+    double maxVal;
+    cv::Point minLoc;
+    cv::Point maxLoc;
+    cv::Point matchLoc;
+
+    roi.resize(foundFilteredTemplate.size());
+
+    switch(matchingMethod){
+
+    case 0:
+        method = CV_TM_SQDIFF;
+        break;
+
+    case 1:
+        method = CV_TM_SQDIFF_NORMED;
+        break;
+
+    case 2:
+        method = CV_TM_CCORR;
+        break;
+
+    case 3:
+        method = CV_TM_CCORR_NORMED;
+        break;
+
+    case 4:
+        method = CV_TM_CCOEFF;
+        break;
+
+    case 5:
+        method = CV_TM_CCOEFF_NORMED;
+        break;
+
+    default:
+        method = CV_TM_CCORR_NORMED;
+        break;
+
+    }
+
+    for(size_t i=0;i<foundFilteredTemplate.size();i++)
+    {
+        cv::matchTemplate(sequence, sequence(foundFilteredTemplate[i]), result, method);
+        cv::normalize(result, result, 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+        cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc, cv::Mat());
+
+        if(method == CV_TM_SQDIFF || method == CV_TM_SQDIFF_NORMED)
+            matchLoc = minLoc;
+        else
+            matchLoc = maxLoc;
+
+        roi[i].x = matchLoc.x;
+        roi[i].y = matchLoc.y;
+        roi[i].width = foundFilteredTemplate[i].width;
+        roi[i].height = foundFilteredTemplate[i].height;
+
+        result.release();
+    }
+
+    return roi;
+
+}
+
+
+
+
+
+/// Main
+
 int main(int argc, char *argv[])
 {
 
     //test pour savoir si l'utilisateur a renseigne un parametre
-    if(argc == 1)
+    if(argc <= 2)
     {
-        std::cout<<"Veuillez rentrer un parametre"<<std::endl;
+        std::cout<<"Veuillez rentrer le type de format - video ou image - et le nom du fichier d'input"<<std::endl;
         std::exit(EXIT_FAILURE);
     }
 
+
     //variables images et masque
-
-    std::string inputFileName(argv[1]);
-
+    formatVideo format;
+    std::string inputFileName(argv[2]);
     int nbTrames = 501;
 
-    cv::Mat sequence[nbTrames];     //the sequence of images for the video
-    cv::Mat sequenceGray[nbTrames];
+    std::vector<cv::Mat> sequence;     //the sequence of images for the video
+    std::vector<cv::Mat> sequenceGray;
+
     cv::Mat previousSequenceGray;
 
     int nbPedestrians = 0;
@@ -104,32 +290,30 @@ int main(int argc, char *argv[])
 
     std::vector<cv::Rect> detectedPedestrian;
 
+    // HOG + Good feature to track + LK
     std::vector<std::vector<cv::Point2f>> featuresDetected;
     std::vector<std::vector<cv::Point2f>> previousFeaturesDetected;
 
+    // HOG + Template tracking
+    std::vector<cv::Rect> boxes;
+    std::vector<cv::Rect> previousBoxes;
+
+
+
     //acquisition de la video
-    for(int i=0;i<nbTrames;i++)
-    {
-        std::stringstream nameTrame;
-        if(i<10)
-        {
-            nameTrame << inputFileName << "_000" << i << ".jpeg";
-        }
-        else if(i<100)
-        {
-            nameTrame << inputFileName << "_00" << i << ".jpeg";
-        }
-        else
-        {
-            nameTrame << inputFileName << "_0" << i << ".jpeg";
-        }
+    format = detectFormat(std::string(argv[1]));
 
-        std::cout<<nameTrame.str()<<std::endl;
+    if(format == SEQUENCE_IMAGE)
+        sequence.resize(nbTrames);
+    else if(format == VIDEO)
+        std::cout<<"video";
 
-        sequence[i] = cv::imread(nameTrame.str());
-    }
+    sequence = extractVideoData(format, inputFileName, nbTrames);
+    sequenceGray.resize(sequence.size());
 
     cv::namedWindow("Video", cv::WINDOW_AUTOSIZE);
+
+
 
 
     //traitement sur la video
@@ -143,7 +327,9 @@ int main(int argc, char *argv[])
             previousSequenceGray = sequenceGray[i];
 
 
-        if(i%15 == 0)
+        /// HOG + Good Features to track + LK
+        /*
+        if(i%20 == 0)
         {
             detectedPedestrian = hogDetection(sequence[i], hog);
             nbPedestrians = detectedPedestrian.size();
@@ -163,30 +349,88 @@ int main(int argc, char *argv[])
             previousFeaturesDetected.resize(featuresDetected.size());
             previousFeaturesDetected = featuresDetected;
         }
+        */
 
+
+
+        /// HOG + Template tracking
+
+        if(i%20 == 0)
+        {
+            detectedPedestrian = hogDetection(sequence[i], hog);
+            nbPedestrians = detectedPedestrian.size();
+
+            if(nbPedestrians != 0)
+            {
+                boxes = templateTracking(sequence[i], detectedPedestrian, CV_TM_CCORR_NORMED);
+                previousBoxes.resize(boxes.size());
+                previousBoxes = boxes;
+            }
+        }
+        else if(previousBoxes.size() != 0)
+        {
+            boxes = templateTracking(sequence[i], previousBoxes, CV_TM_CCORR_NORMED);
+
+            previousBoxes.clear();
+            previousBoxes.resize(boxes.size());
+            previousBoxes = boxes;
+        }
+
+
+
+        //--------Representation--------------------
+
+        /// HOG + Good features to track + LK
         /*
+        cv::Scalar myColor;
+
         for(size_t j=0;j<featuresDetected.size();j++)
         {
+            if(j%3 == 0)
+                myColor = cv::Scalar(0,0,cv::RNG().uniform(200,255));
+
+            else if(j%2 == 0)
+                myColor = cv::Scalar(0,cv::RNG().uniform(200,255),0);
+
+            else
+                myColor = cv::Scalar(cv::RNG().uniform(200,255),0,0);
+
             for(size_t k=0;k<featuresDetected[j].size();k++)
             {
-                cv::circle(sequence[i], featuresDetected[j][k], 1, cv::Scalar(0,0,255),-1);
+                cv::circle(sequence[i], featuresDetected[j][k], 1, myColor,-1);
             }
         }
         */
 
+        /*
         for(size_t j=0;j<featuresDetected.size();j++)
         {
             cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
         }
+        */
+
+
+        /// HOG + Template tracking
+
+        for(size_t j=0;j<boxes.size();j++)
+        {
+            cv::rectangle(sequence[i], boxes[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
+        }
+
 
         //affichage de la video
         cv::imshow("Video", sequence[i]);
 
+
+
         //clear des variables
         detectedPedestrian.clear();
         featuresDetected.clear();
+        boxes.clear();
 
         previousSequenceGray.release();
+
+
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
