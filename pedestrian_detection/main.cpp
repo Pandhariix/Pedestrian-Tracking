@@ -15,10 +15,32 @@
 
 #include <iostream>
 
+enum choiceAlgo{HOG_TEMPLATE_TRACKING,
+                HOG_GOODFEATURESTOTRACK_LK,
+                OPT_FLOW_FARNEBACK};
+
 enum formatVideo{SEQUENCE_IMAGE,
                  VIDEO,
                  NOT_DEFINED};
 
+
+/// Detection de l'algorithme utilisé
+
+choiceAlgo detectAlgo(std::string argument)
+{
+    if(argument.compare("template_tracking") == 0)
+        return HOG_TEMPLATE_TRACKING;
+
+    else if(argument.compare("LK_tracking") == 0)
+        return HOG_GOODFEATURESTOTRACK_LK;
+
+    else if(argument.compare("farneback") == 0)
+        return OPT_FLOW_FARNEBACK;
+
+    else
+        return HOG_GOODFEATURESTOTRACK_LK;
+
+}
 
 
 /// Detection du format video et extraction des données
@@ -260,22 +282,48 @@ std::vector<cv::Rect> templateTracking(cv::Mat sequence, std::vector<cv::Rect> f
 
 
 
+/// Dessin d'un optical flow farneback
+
+void drawOptFlowMap(const cv::Mat& flow, cv::Mat& cflowmap, int step, const cv::Scalar& color)
+{
+        for(int y = 0; y < cflowmap.rows; y += step)
+            for(int x = 0; x < cflowmap.cols; x += step)
+            {
+                const cv::Point2f& fxy = flow.at<cv::Point2f>(y, x);
+                cv::line(cflowmap, cv::Point(x,y), cv::Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), color);
+                cv::circle(cflowmap, cv::Point(x,y), 2, color, -1);
+            }
+}
+
+
+
+
 /// Main
 
 int main(int argc, char *argv[])
 {
 
     //test pour savoir si l'utilisateur a renseigne un parametre
-    if(argc <= 2)
+    if(argc <= 3)
     {
-        std::cout<<"Veuillez rentrer le type de format - video ou image - et le nom du fichier d'input"<<std::endl;
+        std::cout<<"---------------------------------------"<<std::endl<<
+                   "Veuillez rentrer la methode choisie :  "<<std::endl<<
+                   "- template_tracking"                    <<std::endl<<
+                   "- LK_tracking"                          <<std::endl<<
+                   "- farneback"                <<std::endl<<std::endl<<
+                   "Le type de format : "                   <<std::endl<<
+                   "- video"                                <<std::endl<<
+                   "- image"                     <<std::endl<<std::endl<<
+                   "Le nom du fichier d'input"              <<std::endl<<
+                   "---------------------------------------"<<std::endl;
         std::exit(EXIT_FAILURE);
     }
 
 
     //variables images et masque
+    choiceAlgo algo;
     formatVideo format;
-    std::string inputFileName(argv[2]);
+    std::string inputFileName(argv[3]);
     int nbTrames = 501;
 
     std::vector<cv::Mat> sequence;     //the sequence of images for the video
@@ -298,10 +346,14 @@ int main(int argc, char *argv[])
     std::vector<cv::Rect> boxes;
     std::vector<cv::Rect> previousBoxes;
 
-
+    // Optical flow farneback
+    cv::Mat flow;
+    cv::Mat imGray;
+    cv::Mat imGrayPrev;
 
     //acquisition de la video
-    format = detectFormat(std::string(argv[1]));
+    algo = detectAlgo(std::string(argv[1]));
+    format = detectFormat(std::string(argv[2]));
 
     if(format == SEQUENCE_IMAGE)
         sequence.resize(nbTrames);
@@ -327,99 +379,134 @@ int main(int argc, char *argv[])
             previousSequenceGray = sequenceGray[i];
 
 
-        /// HOG + Good Features to track + LK
-        /*
-        if(i%20 == 0)
-        {
-            detectedPedestrian = hogDetection(sequence[i], hog);
-            nbPedestrians = detectedPedestrian.size();
 
-            if(nbPedestrians != 0)
+
+        /// HOG + Good Features to track + LK
+
+        if(algo == HOG_GOODFEATURESTOTRACK_LK)
+        {
+            if(i%20 == 0)
             {
-                featuresDetected = featuresDetection(sequenceGray[i], detectedPedestrian);
+                detectedPedestrian = hogDetection(sequence[i], hog);
+                nbPedestrians = detectedPedestrian.size();
+
+                if(nbPedestrians != 0)
+                {
+                    featuresDetected = featuresDetection(sequenceGray[i], detectedPedestrian);
+                    previousFeaturesDetected.resize(featuresDetected.size());
+                    previousFeaturesDetected = featuresDetected;
+                }
+            }
+            else if(previousFeaturesDetected.size() != 0)
+            {
+                featuresDetected = lucasKanadeTracking(previousSequenceGray, sequenceGray[i], previousFeaturesDetected);
+
+                previousFeaturesDetected.clear();
                 previousFeaturesDetected.resize(featuresDetected.size());
                 previousFeaturesDetected = featuresDetected;
             }
-        }
-        else if(previousFeaturesDetected.size() != 0)
-        {
-            featuresDetected = lucasKanadeTracking(previousSequenceGray, sequenceGray[i], previousFeaturesDetected);
 
-            previousFeaturesDetected.clear();
-            previousFeaturesDetected.resize(featuresDetected.size());
-            previousFeaturesDetected = featuresDetected;
+
+            //--------Representation--------------------
+
+            /*
+            cv::Scalar myColor;
+
+            for(size_t j=0;j<featuresDetected.size();j++)
+            {
+                if(j%3 == 0)
+                    myColor = cv::Scalar(0,0,cv::RNG().uniform(200,255));
+
+                else if(j%2 == 0)
+                    myColor = cv::Scalar(0,cv::RNG().uniform(200,255),0);
+
+                else
+                    myColor = cv::Scalar(cv::RNG().uniform(200,255),0,0);
+
+                for(size_t k=0;k<featuresDetected[j].size();k++)
+                {
+                    cv::circle(sequence[i], featuresDetected[j][k], 1, myColor,-1);
+                }
+            }
+            */
+
+
+            for(size_t j=0;j<featuresDetected.size();j++)
+            {
+                cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
+            }
+
+
+
+            //affichage de la video
+            cv::imshow("Video", sequence[i]);
         }
-        */
+
 
 
 
         /// HOG + Template tracking
 
-        if(i%20 == 0)
+        else if(algo == HOG_TEMPLATE_TRACKING)
         {
-            detectedPedestrian = hogDetection(sequence[i], hog);
-            nbPedestrians = detectedPedestrian.size();
-
-            if(nbPedestrians != 0)
+            if(i%20 == 0)
             {
-                boxes = templateTracking(sequence[i], detectedPedestrian, CV_TM_CCORR_NORMED);
+                detectedPedestrian = hogDetection(sequence[i], hog);
+                nbPedestrians = detectedPedestrian.size();
+
+                if(nbPedestrians != 0)
+                {
+                    boxes = templateTracking(sequence[i], detectedPedestrian, CV_TM_CCORR_NORMED);
+                    previousBoxes.resize(boxes.size());
+                    previousBoxes = boxes;
+                }
+            }
+            else if(previousBoxes.size() != 0)
+            {
+                boxes = templateTracking(sequence[i], previousBoxes, CV_TM_CCORR_NORMED);
+
+                previousBoxes.clear();
                 previousBoxes.resize(boxes.size());
                 previousBoxes = boxes;
             }
-        }
-        else if(previousBoxes.size() != 0)
-        {
-            boxes = templateTracking(sequence[i], previousBoxes, CV_TM_CCORR_NORMED);
 
-            previousBoxes.clear();
-            previousBoxes.resize(boxes.size());
-            previousBoxes = boxes;
-        }
+            //--------Representation--------------------
 
-
-
-        //--------Representation--------------------
-
-        /// HOG + Good features to track + LK
-        /*
-        cv::Scalar myColor;
-
-        for(size_t j=0;j<featuresDetected.size();j++)
-        {
-            if(j%3 == 0)
-                myColor = cv::Scalar(0,0,cv::RNG().uniform(200,255));
-
-            else if(j%2 == 0)
-                myColor = cv::Scalar(0,cv::RNG().uniform(200,255),0);
-
-            else
-                myColor = cv::Scalar(cv::RNG().uniform(200,255),0,0);
-
-            for(size_t k=0;k<featuresDetected[j].size();k++)
+            for(size_t j=0;j<boxes.size();j++)
             {
-                cv::circle(sequence[i], featuresDetected[j][k], 1, myColor,-1);
+                cv::rectangle(sequence[i], boxes[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
+            }
+
+
+            //affichage de la video
+            cv::imshow("Video", sequence[i]);
+        }
+
+
+
+
+
+        /// HOG et optical flow farneback
+
+        else if(algo == OPT_FLOW_FARNEBACK)
+        {
+            if(i!=0)
+            {
+                flow = cv::Mat::zeros(sequence[i].size(), CV_32FC2);
+                cv::cvtColor(sequence[i], imGray, CV_BGR2GRAY);
+                cv::cvtColor(sequence[i-1], imGrayPrev, CV_BGR2GRAY);
+
+                cv::calcOpticalFlowFarneback(imGrayPrev, imGray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+
+                //--------Representation--------------------
+
+                drawOptFlowMap(flow, imGrayPrev, 16, CV_RGB(0, 255, 0)); //dessin test
+
+                //affichage de la video
+                cv::imshow("Video", imGrayPrev);
             }
         }
-        */
-
-        /*
-        for(size_t j=0;j<featuresDetected.size();j++)
-        {
-            cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
-        }
-        */
-
-
-        /// HOG + Template tracking
-
-        for(size_t j=0;j<boxes.size();j++)
-        {
-            cv::rectangle(sequence[i], boxes[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
-        }
-
-
-        //affichage de la video
-        cv::imshow("Video", sequence[i]);
 
 
 
@@ -430,7 +517,9 @@ int main(int argc, char *argv[])
 
         previousSequenceGray.release();
 
-
+        flow.release();
+        imGray.release();
+        imGrayPrev.release();
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
