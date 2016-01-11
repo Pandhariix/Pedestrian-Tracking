@@ -328,7 +328,38 @@ void drawOptFlowMap(const cv::Mat& flow, cv::Mat& cflowmap, int step, const cv::
 //------------------METHODES-CAMSHIFT-ET-KALMAN-FILTER---------------------//
 
 
+/// Generation de la back projection d'un histogramme, obtenu a partir d'une image
 
+cv::MatND computeProbImage(cv::Mat image)
+{
+    cv::Mat hsv;
+    cv::Mat hue;
+    cv::MatND hist;
+    cv::MatND backProj;
+    int channels[] = {0,0};
+    int hbins = 30;                                   // Quantize the hue to 30 levels
+    //int sbins = 32;                                 // and the saturation to 32 levels
+    int histSize = MAX( hbins, 2 );
+    //int histSizes[] = {hbins, sbins};
+    float hue_range[] = { 0, 180 };                   // hue varies from 0 to 179, see cvtColor
+    //float sat_range[] = { 0, 256 };                 // saturation varies from 0 (black-gray-white) to
+    const float* range = { hue_range };               // 255 (pure spectrum color)
+    //const float* ranges = { hue_range, sat_range };
+    //double maxVal=0;
+    int scale = 1;
+
+
+    cv::cvtColor(image, hsv, CV_BGR2HSV);
+    hue.create(hsv.size(), hsv.depth());
+    cv::mixChannels(&hsv, 1, &hue, 1, channels, 1);
+
+    cv::calcHist(&hue, 1, 0, cv::Mat(), hist, 1, &histSize, &range, true, false);
+    cv::normalize(hist, hist, 0, 255, cv::NORM_MINMAX, -1, cv::Mat());
+
+    cv::calcBackProject(&hue, 1, 0, hist, backProj, &range, scale);
+
+    return backProj;
+}
 
 
 
@@ -406,7 +437,10 @@ int main(int argc, char *argv[])
 
 
     //camshift and kalman filter
-
+    cv::MatND backProj;
+    cv::Rect roiCamShift;
+    cv::RotatedRect rectCamShift;
+    cv::Point2f rect_points[4];
 
 
     //acquisition de la video
@@ -567,7 +601,7 @@ int main(int argc, char *argv[])
                 cv::calcOpticalFlowFarneback(imGrayPrev, imGray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
 
 
-                //--------Representation--------------------
+                //-----------------Representation------------------------------//
 
                 drawOptFlowMap(flow, imGrayPrev, 16, CV_RGB(0, 255, 0)); //dessin test
 
@@ -584,13 +618,33 @@ int main(int argc, char *argv[])
 
         else if(algo == CAMSHIFT_KALMAN_FILTER)
         {
-            //---Conversion-image-BGR2LAB-----//
-            cv::cvtColor(sequence[i], sequence[i], CV_BGR2Lab);
+            //-----------------Conversion-image-BGR2LAB------------------------//
+
+            backProj = computeProbImage(sequence[i]);
+
+            ///-------Test-Camshift--------------------///
+            roiCamShift.x = 200;
+            roiCamShift.y = 800;
+            roiCamShift.width = 500;
+            roiCamShift.height = 1000;
+            rectCamShift = cv::CamShift(backProj, roiCamShift, cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 10, 1));
+
+
+            //-----------------Representation----------------------------------//
+
+            //dessin du rectangle
+            rectCamShift.points(rect_points);
+
+            for(int j = 0; j < 4; j++)
+                cv::line(sequence[i], rect_points[j], rect_points[(j+1)%4], cv::Scalar( 0, 0, 255), 2, 8);
+
+            //affichage de la video
+            cv::imshow("Video", backProj);
         }
 
 
 
-        //------------------CLEAR-VARIABLES----------------------------------------//
+        //------------------CLEAR-VARIABLES------------------------------------//
 
         detectedPedestrian.clear();
         featuresDetected.clear();
@@ -603,8 +657,9 @@ int main(int argc, char *argv[])
         imGrayPrev.release();
 
 
+        backProj.release();
 
-        //------------------CONDITIONS-ARRET---------------------------------------//
+        //------------------CONDITIONS-ARRET-----------------------------------//
 
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
         {
