@@ -69,22 +69,6 @@ void computeBarycentre()
 }
 
 
-//------------------------RATIO-RECTANGLES-------------------------------------//
-
-std::vector<cv::Rect> rectangleRatio(std::vector<cv::Point2f> centres, std::vector<cv::Rect> rect)
-{
-    for(size_t i=0;i<rect.size();i++)
-    {
-        if((rect[i].width/rect[i].height) > 0.33)
-        {
-            rect[i].width = 0.33*rect[i].height;
-            rect[i].x
-        }
-    }
-}
-
-
-
 //------------------------MAIN-------------------------------------------------//
 
 
@@ -132,7 +116,6 @@ int main(int argc, char *argv[])
 
     //dessin des rectangles
     std::vector<cv::Rect> rect;
-    std::vector<cv::Rect> previousRect;
 
     // soustracteur de fond
     cv::Ptr<cv::BackgroundSubtractor> pMOG2;
@@ -310,7 +293,6 @@ int main(int argc, char *argv[])
         err.clear();
         corners.clear();
         rect.clear();
-        previousRect.clear();
         centres.clear();
 
         //condition arret

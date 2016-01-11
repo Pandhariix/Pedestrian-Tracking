@@ -12,16 +12,26 @@
 #include <opencv2/opencv.hpp>
 #include "opencv2/features2d/features2d.hpp"
 
-
 #include <iostream>
+
+
+
+//------------------ENUMERATIONS-------------------------------------------//
+
 
 enum choiceAlgo{HOG_TEMPLATE_TRACKING,
                 HOG_GOODFEATURESTOTRACK_LK,
-                OPT_FLOW_FARNEBACK};
+                OPT_FLOW_FARNEBACK,
+                CAMSHIFT_KALMAN_FILTER};
 
 enum formatVideo{SEQUENCE_IMAGE,
                  VIDEO,
                  NOT_DEFINED};
+
+
+
+
+//------------------METHODES-PARSERS---------------------------------------//
 
 
 /// Detection de l'algorithme utilisé
@@ -36,6 +46,9 @@ choiceAlgo detectAlgo(std::string argument)
 
     else if(argument.compare("farneback") == 0)
         return OPT_FLOW_FARNEBACK;
+
+    else if(argument.compare("camshift_kalman") == 0)
+        return CAMSHIFT_KALMAN_FILTER;
 
     else
         return HOG_GOODFEATURESTOTRACK_LK;
@@ -130,6 +143,11 @@ std::vector<cv::Mat> extractVideoData(formatVideo format, std::string filePathNa
 
 
 
+
+
+//------------------METHODES-HOG-------------------------------------------//
+
+
 /// Detection via le HOG detector de opencv des piétons
 
 std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
@@ -155,6 +173,9 @@ std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
     return found_filtered;
 }
 
+
+
+//------------------METHODES-CORNERS-ET-LK-TRACKING------------------------//
 
 
 ///Corners detection (detection des corners via good features to track)
@@ -206,6 +227,8 @@ std::vector<std::vector<cv::Point2f>> lucasKanadeTracking(cv::Mat previousSequen
 
 
 
+
+//------------------METHODES-TEMPLATES-------------------------------------//
 
 
 /// Tracking avec méthode des templates
@@ -281,6 +304,8 @@ std::vector<cv::Rect> templateTracking(cv::Mat sequence, std::vector<cv::Rect> f
 
 
 
+//------------------METHODES-OPTICAL-FLOW-FARNEBACK------------------------//
+
 
 /// Dessin d'un optical flow farneback
 
@@ -298,7 +323,23 @@ void drawOptFlowMap(const cv::Mat& flow, cv::Mat& cflowmap, int step, const cv::
 
 
 
-/// Main
+
+
+//------------------METHODES-CAMSHIFT-ET-KALMAN-FILTER---------------------//
+
+
+
+
+
+
+
+
+
+
+
+
+
+//------------------MAIN---------------------------------------------------//
 
 int main(int argc, char *argv[])
 {
@@ -310,7 +351,8 @@ int main(int argc, char *argv[])
                    "Veuillez rentrer la methode choisie :  "<<std::endl<<
                    "- template_tracking"                    <<std::endl<<
                    "- LK_tracking"                          <<std::endl<<
-                   "- farneback"                <<std::endl<<std::endl<<
+                   "- farneback"                            <<std::endl<<
+                   "- camshift_kalman"           <<std::endl<<std::endl<<
                    "Le type de format : "                   <<std::endl<<
                    "- video"                                <<std::endl<<
                    "- image"                     <<std::endl<<std::endl<<
@@ -320,13 +362,18 @@ int main(int argc, char *argv[])
     }
 
 
-    //variables images et masque
+
+    //------------------VARIABLES----------------------------------------------//
+
+
+    //Variables communes
+
     choiceAlgo algo;
     formatVideo format;
     std::string inputFileName(argv[3]);
     int nbTrames = 501;
 
-    std::vector<cv::Mat> sequence;     //the sequence of images for the video
+    std::vector<cv::Mat> sequence;
     std::vector<cv::Mat> sequenceGray;
 
     cv::Mat previousSequenceGray;
@@ -338,22 +385,39 @@ int main(int argc, char *argv[])
 
     std::vector<cv::Rect> detectedPedestrian;
 
+
     // HOG + Good feature to track + LK
     std::vector<std::vector<cv::Point2f>> featuresDetected;
     std::vector<std::vector<cv::Point2f>> previousFeaturesDetected;
 
+
+
     // HOG + Template tracking
     std::vector<cv::Rect> boxes;
     std::vector<cv::Rect> previousBoxes;
+
+
 
     // Optical flow farneback
     cv::Mat flow;
     cv::Mat imGray;
     cv::Mat imGrayPrev;
 
+
+
+    //camshift and kalman filter
+
+
+
     //acquisition de la video
     algo = detectAlgo(std::string(argv[1]));
     format = detectFormat(std::string(argv[2]));
+
+
+
+
+
+    //------------------VIDEO--------------------------------------------------//
 
     if(format == SEQUENCE_IMAGE)
         sequence.resize(nbTrames);
@@ -368,7 +432,9 @@ int main(int argc, char *argv[])
 
 
 
-    //traitement sur la video
+
+    //------------------TRAITEMENT-VIDEO---------------------------------------//
+
     for(int i=0;i<nbTrames;i++)
     {
         cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
@@ -381,7 +447,7 @@ int main(int argc, char *argv[])
 
 
 
-        /// HOG + Good Features to track + LK
+        ///------------------HOG + Good Features to track + LK-----------------//
 
         if(algo == HOG_GOODFEATURESTOTRACK_LK)
         {
@@ -445,7 +511,8 @@ int main(int argc, char *argv[])
 
 
 
-        /// HOG + Template tracking
+
+        ///------------------HOG + Template Tracking---------------------------//
 
         else if(algo == HOG_TEMPLATE_TRACKING)
         {
@@ -486,7 +553,8 @@ int main(int argc, char *argv[])
 
 
 
-        /// HOG et optical flow farneback
+
+        ///------------------HOG + Optical Flow Farneback----------------------//
 
         else if(algo == OPT_FLOW_FARNEBACK)
         {
@@ -510,7 +578,20 @@ int main(int argc, char *argv[])
 
 
 
-        //clear des variables
+
+
+        ///------------------Camshift + Kalman Filter--------------------------//
+
+        else if(algo == CAMSHIFT_KALMAN_FILTER)
+        {
+            //---Conversion-image-BGR2LAB-----//
+            cv::cvtColor(sequence[i], sequence[i], CV_BGR2Lab);
+        }
+
+
+
+        //------------------CLEAR-VARIABLES----------------------------------------//
+
         detectedPedestrian.clear();
         featuresDetected.clear();
         boxes.clear();
@@ -521,7 +602,10 @@ int main(int argc, char *argv[])
         imGray.release();
         imGrayPrev.release();
 
-        //condition arret
+
+
+        //------------------CONDITIONS-ARRET---------------------------------------//
+
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
         {
             std::cout << "esc key is pressed by user" << std::endl;
