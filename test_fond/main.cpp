@@ -19,6 +19,9 @@ enum TrackingMethod {GOOD_FEATURES_TO_TRACK,
                      LUCAS_KANADE_TRACKING,
                      NOTHING_TO_TRACK};
 
+
+//------------------------CHOIX-METHODE-DE-TRACKING----------------------------//
+
 TrackingMethod chooseTrackingMethod(int nbRoi, int nbRoiPreviousFrame)
 {
     if(nbRoi == 0)
@@ -39,6 +42,50 @@ TrackingMethod chooseTrackingMethod(int nbRoi, int nbRoiPreviousFrame)
     }
 }
 
+
+//------------------------CENTRE-DES-RECTANGLES--------------------------------//
+
+std::vector<cv::Point2f> computeCentre(std::vector<cv::Rect> roi)
+{
+    std::vector<cv::Point2f> centers;
+    centers.resize(roi.size());
+
+    for(size_t i=0;i<roi.size();i++)
+    {
+        centers[i].x = roi[i].x+(roi[i].width/2);
+        centers[i].y = roi[i].y+(roi[i].height/2);
+    }
+
+    return centers;
+}
+
+
+
+//------------------------BARYCENTRES-DES-RECTANGLES---------------------------//
+
+void computeBarycentre()
+{
+
+}
+
+
+//------------------------RATIO-RECTANGLES-------------------------------------//
+
+std::vector<cv::Rect> rectangleRatio(std::vector<cv::Point2f> centres, std::vector<cv::Rect> rect)
+{
+    for(size_t i=0;i<rect.size();i++)
+    {
+        if((rect[i].width/rect[i].height) > 0.33)
+        {
+            rect[i].width = 0.33*rect[i].height;
+            rect[i].x
+        }
+    }
+}
+
+
+
+//------------------------MAIN-------------------------------------------------//
 
 
 int main(int argc, char *argv[])
@@ -85,6 +132,7 @@ int main(int argc, char *argv[])
 
     //dessin des rectangles
     std::vector<cv::Rect> rect;
+    std::vector<cv::Rect> previousRect;
 
     // soustracteur de fond
     cv::Ptr<cv::BackgroundSubtractor> pMOG2;
@@ -100,6 +148,11 @@ int main(int argc, char *argv[])
     int blockSize = 3;
     bool useHarrisDetector = false;
     double kdef = 0.04;
+
+
+    //variables centre rectangle
+    std::vector<cv::Point2f> centres;
+
 
 
     //acquisition de la video
@@ -181,6 +234,22 @@ int main(int argc, char *argv[])
         }
 
 
+        //------------------------CALCUL-DES-CENTRES---DEFINITION-DES-RECTANGLES-------//
+
+        if(choiceTracking != NOTHING_TO_TRACK)
+        {
+            rect.resize(corners.size());
+
+            for( size_t j = 0; j< corners.size(); j++ )
+            {
+                rect[j] = cv::boundingRect(corners[j]);
+            }
+
+            centres.resize(corners.size());
+            centres = computeCentre(rect);
+        }
+
+        /*
         if(choiceTracking != NOTHING_TO_TRACK)
         {
             //placement des points d'interêts sur l'image POUR LE DEBUG
@@ -200,19 +269,17 @@ int main(int argc, char *argv[])
                 }
             }
         }
-
+        */
 
 
         // dessins sur l'image finale
         if(choiceTracking != NOTHING_TO_TRACK)
         {
-            rect.resize(corners.size());
-
             for( size_t j = 0; j< corners.size(); j++ )
             {
-                rect[j] = cv::boundingRect(corners[j]);
                 cv::rectangle(sequence[i], rect[j], cv::Scalar( 0, 0, 255), 2, 8, 0 );
                 cv::putText(sequence[i], "ROI", cv::Point(rect[j].x, rect[j].y), cv::FONT_HERSHEY_PLAIN, 1.0, CV_RGB(0,255,0), 2.0);
+                cv::circle(sequence[i], centres[j], 1, cv::Scalar(0,255,0), -1, 24);
             }
         }
 
@@ -243,6 +310,8 @@ int main(int argc, char *argv[])
         err.clear();
         corners.clear();
         rect.clear();
+        previousRect.clear();
+        centres.clear();
 
         //condition arret
         if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
