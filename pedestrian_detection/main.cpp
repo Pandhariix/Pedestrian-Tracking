@@ -153,24 +153,10 @@ std::vector<cv::Mat> extractVideoData(formatVideo format, std::string filePathNa
 std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
 {
     std::vector<cv::Rect> found;
-    std::vector<cv::Rect> found_filtered;
 
     hog.detectMultiScale(sequence, found, 0, cv::Size(8,8), cv::Size(32,32), 1.05, 2);
 
-    size_t k, j;
-
-    for (k=0; k<found.size(); k++)
-    {
-        cv::Rect r = found[k];
-
-        for (j=0; j<found.size(); j++)
-            if (j!=k && (r & found[j]) == r)
-                break;
-
-        if (j== found.size())
-            found_filtered.push_back(r);
-    }
-    return found_filtered;
+    return found;
 }
 
 
@@ -330,12 +316,15 @@ void drawOptFlowMap(const cv::Mat& flow, cv::Mat& cflowmap, int step, const cv::
 
 /// Generation de la back projection d'un histogramme, obtenu a partir d'une image
 
-cv::MatND computeProbImage(cv::Mat image)
+std::vector<cv::MatND> computeProbImage(cv::Mat image, std::vector<cv::Rect> rectRoi, std::vector<cv::Mat> &hist, std::vector<bool> &detected)
 {
+    int smin = 30;
+    int vmin = 10;
+    int vmax = 256;
+    cv::Mat mask;
     cv::Mat hsv;
     cv::Mat hue;
-    cv::MatND hist;
-    cv::MatND backProj;
+    std::vector<cv::MatND> backProj;
     int channels[] = {0,0};
     int hbins = 30;                                   // Quantize the hue to 30 levels
     //int sbins = 32;                                 // and the saturation to 32 levels
@@ -346,17 +335,34 @@ cv::MatND computeProbImage(cv::Mat image)
     const float* range = { hue_range };               // 255 (pure spectrum color)
     //const float* ranges = { hue_range, sat_range };
     //double maxVal=0;
-    int scale = 1;
 
+    backProj.resize(rectRoi.size());
+    hist.resize(rectRoi.size());
 
     cv::cvtColor(image, hsv, CV_BGR2HSV);
     hue.create(hsv.size(), hsv.depth());
     cv::mixChannels(&hsv, 1, &hue, 1, channels, 1);
+    cv::inRange(hsv, cv::Scalar(0, smin, MIN(vmin,vmax)), cv::Scalar(180, 256, MAX(vmin, vmax)), mask);
 
-    cv::calcHist(&hue, 1, 0, cv::Mat(), hist, 1, &histSize, &range, true, false);
-    cv::normalize(hist, hist, 0, 255, cv::NORM_MINMAX, -1, cv::Mat());
+    for(size_t i=0;i<rectRoi.size();i++)
+    {
+        if(!detected[i])
+        {
+            cv::Mat roi(hue, rectRoi[i]);
+            cv::Mat maskroi(mask, rectRoi[i]);
 
-    cv::calcBackProject(&hue, 1, 0, hist, backProj, &range, scale);
+            cv::calcHist(&roi, 1, 0, maskroi, hist[i], 1, &histSize, &range, true, false);
+            cv::normalize(hist[i], hist[i], 0, 255, cv::NORM_MINMAX);
+
+            detected[i] = true;
+
+            roi.release();
+            maskroi.release();
+        }
+
+        cv::calcBackProject(&hue, 1, 0, hist[i], backProj[i], &range);
+        backProj[i] &= mask;
+    }
 
     return backProj;
 }
@@ -364,6 +370,41 @@ cv::MatND computeProbImage(cv::Mat image)
 
 
 
+/// Comparaisons de roi, pour determiner si il y a deja eu detection
+
+void refineROI(std::vector<cv::Rect> &roiRefined, std::vector<bool> &detected, std::vector<cv::Rect> roiHog)
+{
+    if(roiRefined.size() != 0)
+    {
+        for(size_t i=0;i<roiRefined.size();i++)
+        {
+            for(size_t j=0;j<roiHog.size();j++)
+            {
+                const cv::Point p1(roiHog[j].x, roiHog[j].y+roiHog[j].height);
+                const cv::Point p2(roiHog[j].x+roiHog[j].width, roiHog[j].y+roiHog[j].height);
+                const cv::Point p3(roiHog[j].x+roiHog[j].width, roiHog[j].y);
+                const cv::Point p4(roiHog[j].x, roiHog[j].y);
+
+                if(!roiRefined[i].contains(p1) ||
+                   !roiRefined[i].contains(p2) ||
+                   !roiRefined[i].contains(p3) ||
+                   !roiRefined[i].contains(p4))
+                {
+                    roiRefined.push_back(roiHog[j]);
+                    detected.push_back(false);
+                }
+            }
+        }
+    }
+    else
+    {
+        for(size_t i=0;i<roiHog.size();i++)
+        {
+            roiRefined.push_back(roiHog[i]);
+            detected.push_back(false);
+        }
+    }
+}
 
 
 
@@ -437,10 +478,14 @@ int main(int argc, char *argv[])
 
 
     //camshift and kalman filter
-    cv::MatND backProj;
-    cv::Rect roiCamShift;
-    cv::RotatedRect rectCamShift;
+    std::vector<cv::MatND> backProj;
+    std::vector<cv::Rect> roiHogDetected;
+    std::vector<cv::Rect> roiCamShift;
+    std::vector<bool> detected;
+    std::vector<cv::Mat> hist;
+    std::vector<cv::RotatedRect> rectCamShift;
     cv::Point2f rect_points[4];
+
 
 
     //acquisition de la video
@@ -614,32 +659,52 @@ int main(int argc, char *argv[])
 
 
 
-        ///------------------Camshift + Kalman Filter--------------------------//
+        ///--------------HOG+Camshift + Kalman Filter--------------------------//
 
         else if(algo == CAMSHIFT_KALMAN_FILTER)
         {
-            //-----------------Conversion-image-BGR2LAB------------------------//
 
-            backProj = computeProbImage(sequence[i]);
+            //camshift
+            if(i%20 == 0 && roiCamShift.size() == 0)
+            {
+                roiHogDetected = hogDetection(sequence[i], hog);
+                refineROI(roiCamShift, detected, roiHogDetected);
+            }
+
+            backProj = computeProbImage(sequence[i], roiCamShift, hist, detected);
+
 
             ///-------Test-Camshift--------------------///
-            roiCamShift.x = 200;
-            roiCamShift.y = 800;
-            roiCamShift.width = 500;
-            roiCamShift.height = 1000;
-            rectCamShift = cv::CamShift(backProj, roiCamShift, cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 10, 1));
 
+            rectCamShift.resize(roiCamShift.size());
+
+            for(size_t j=0;j<roiCamShift.size();j++)
+            {
+                /*
+                std::cout<<roiCamShift[j]<<std::endl;
+                cv::rectangle(backProj[j], roiCamShift[j], cv::Scalar( 255, 0, 0), 2, 8, 0 ); //DEBUG
+                cv::imshow("before camshift", backProj[j]);
+                cv::waitKey(0);
+                */
+
+                rectCamShift[j] = cv::CamShift(backProj[j], roiCamShift[j], cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 10, 1));
+                rectCamShift[j].points(rect_points);
+
+                for(int k = 0; k < 4; k++)
+                    cv::line(sequence[i], rect_points[k], rect_points[(k+1)%4], cv::Scalar( 0, 0, 255), 2, 8);
+            }
+            ///----------------------------------------///
 
             //-----------------Representation----------------------------------//
 
             //dessin du rectangle
-            rectCamShift.points(rect_points);
 
-            for(int j = 0; j < 4; j++)
-                cv::line(sequence[i], rect_points[j], rect_points[(j+1)%4], cv::Scalar( 0, 0, 255), 2, 8);
+
+            for(size_t j=0;j<roiCamShift.size();j++)
+                cv::rectangle(sequence[i], roiCamShift[j], cv::Scalar( 255, 0, 0), 2, 8, 0 );
 
             //affichage de la video
-            cv::imshow("Video", backProj);
+            cv::imshow("Video", sequence[i]);
         }
 
 
@@ -656,8 +721,8 @@ int main(int argc, char *argv[])
         imGray.release();
         imGrayPrev.release();
 
-
-        backProj.release();
+        roiHogDetected.clear();
+        backProj.clear();
 
         //------------------CONDITIONS-ARRET-----------------------------------//
 
