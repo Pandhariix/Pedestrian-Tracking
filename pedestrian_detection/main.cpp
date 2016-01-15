@@ -22,7 +22,8 @@
 enum choiceAlgo{HOG_TEMPLATE_TRACKING,
                 HOG_GOODFEATURESTOTRACK_LK,
                 OPT_FLOW_FARNEBACK,
-                CAMSHIFT_KALMAN_FILTER};
+                CAMSHIFT_KALMAN_FILTER,
+                BACKGROUND_SUBSTRACTION};
 
 enum formatVideo{SEQUENCE_IMAGE,
                  VIDEO,
@@ -50,6 +51,9 @@ choiceAlgo detectAlgo(std::string argument)
     else if(argument.compare("camshift_kalman") == 0)
         return CAMSHIFT_KALMAN_FILTER;
 
+    else if(argument.compare("background_substraction") == 0)
+        return BACKGROUND_SUBSTRACTION;
+
     else
         return HOG_GOODFEATURESTOTRACK_LK;
 
@@ -72,13 +76,13 @@ formatVideo detectFormat(std::string argument)
 
 
 
-std::vector<cv::Mat> extractVideoData(formatVideo format, std::string filePathName, int nbTrames)
+void extractVideoData(std::vector<cv::Mat> &sequence, formatVideo format, std::string filePathName, int &nbTrames, double &fps)
 {
-    std::vector<cv::Mat> sequence;
 
     if(format == SEQUENCE_IMAGE)
     {
         sequence.resize(nbTrames);
+        fps = 15;
 
         for(int i=0;i<nbTrames;i++)
         {
@@ -100,43 +104,42 @@ std::vector<cv::Mat> extractVideoData(formatVideo format, std::string filePathNa
 
             sequence[i] = cv::imread(nameTrame.str());
         }
-        return sequence;
+
     }
 
     else if(format == VIDEO)
     {
         cv::VideoCapture capture;
+        cv::Mat frame;
+
         capture.open(filePathName);
 
         if(capture.isOpened())
         {
-            double fps = capture.get(CV_CAP_PROP_FPS);
-            int delay = 1000/fps;
-            int nbFrames = 0;
+            fps = capture.get(CV_CAP_PROP_FPS);
 
             while(true)
             {
-                if(!capture.read(sequence[nbFrames]))
+                if(!capture.read(frame))
                     break;
 
-                if(cv::waitKey(delay)>=0)
-                    break;
+                sequence.push_back(frame);
+                frame.release();
             }
+
             capture.release();
+            nbTrames = sequence.size();
         }
 
         else
         {
             std::cout<<"Impossible de lire la video : "<<filePathName<<std::endl;
         }
-
-        return sequence;
     }
 
     else
     {
         std::cout<<"Argument incorrect, veuillez entrer 'image' ou 'video'"<<std::endl;
-        return sequence;
     }
 }
 
@@ -161,13 +164,92 @@ std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
 
 
 
+//------------------METHODES-BACKGROUND-SUBSTRACTION-----------------------//
+
+
+
+/// Comparaisons de roi, pour determiner si il y a deja eu detection
+
+void filterDetectedPedestrian(std::vector<cv::Rect> &detectedPedestrianFiltered, std::vector<cv::Rect> detectedPedestrian)
+{
+    if(detectedPedestrianFiltered.size() != 0)
+    {
+        for(size_t i=0;i<detectedPedestrianFiltered.size();i++)
+        {
+            for(size_t j=0;j<detectedPedestrian.size();j++)
+            {
+                const cv::Point p1(detectedPedestrian[j].x, detectedPedestrian[j].y+detectedPedestrian[j].height);
+                const cv::Point p2(detectedPedestrian[j].x+detectedPedestrian[j].width, detectedPedestrian[j].y+detectedPedestrian[j].height);
+                const cv::Point p3(detectedPedestrian[j].x+detectedPedestrian[j].width, detectedPedestrian[j].y);
+                const cv::Point p4(detectedPedestrian[j].x, detectedPedestrian[j].y);
+
+                if(!detectedPedestrianFiltered[i].contains(p1) ||
+                   !detectedPedestrianFiltered[i].contains(p2) ||
+                   !detectedPedestrianFiltered[i].contains(p3) ||
+                   !detectedPedestrianFiltered[i].contains(p4))
+                {
+                    detectedPedestrianFiltered.push_back(detectedPedestrian[j]);
+                }
+            }
+        }
+    }
+    else
+    {
+        for(size_t i=0;i<detectedPedestrian.size();i++)
+        {
+            detectedPedestrianFiltered.push_back(detectedPedestrian[i]);
+        }
+    }
+}
+
+
+
+///Detection des pietons avec background substraction
+
+void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &detectedPedestrianFiltered, cv::Ptr<cv::BackgroundSubtractor> &pMOG2)
+{
+    int threshold = 150;
+    cv::Mat mask;
+    cv::Mat sequenceGrayDiff;
+    std::vector<std::vector<cv::Point> > contours;
+    std::vector<cv::Vec4i> hierarchy;
+    std::vector<std::vector<cv::Point> > contours_poly;
+    std::vector<cv::Rect> detectedPedestrian;
+
+    pMOG2->apply(sequence,sequenceGrayDiff);
+
+    cv::threshold(sequenceGrayDiff, mask, threshold, 255, cv::THRESH_BINARY);
+    cv::erode(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,6)));
+    cv::dilate(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(25,55)));
+    cv::erode(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3,6)));
+
+    cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE, cv::Point(0,0));
+
+    contours_poly.resize(contours.size());
+    detectedPedestrian.resize(contours.size());
+
+    for(size_t j=0;j<contours.size();j++)
+    {
+        cv::approxPolyDP(cv::Mat(contours[j]), contours_poly[j], 3, true);
+        detectedPedestrian[j] = cv::boundingRect(cv::Mat(contours_poly[j]));
+    }
+
+    detectedPedestrianFiltered = detectedPedestrian;
+    //filterDetectedPedestrian(detectedPedestrianFiltered, detectedPedestrian);
+}
+
+
+
+
+
 //------------------METHODES-CORNERS-ET-LK-TRACKING------------------------//
 
 
 ///Corners detection (detection des corners via good features to track)
 
-std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequenceGray, std::vector<cv::Rect> found_filtered)
+std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequence, std::vector<cv::Rect> found_filtered)
 {
+    cv::Mat sequenceGray;
     std::vector<std::vector<cv::Point2f>> corners;
     int maxCorners = 25;
     double qualityLevel = 0.01;
@@ -175,6 +257,8 @@ std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequenceGray, st
     int blockSize = 3;
     bool useHarrisDetector = false;
     double kdef = 0.04;
+
+    cv::cvtColor(sequence, sequenceGray, CV_BGR2GRAY);
 
     corners.resize(found_filtered.size());
 
@@ -196,11 +280,16 @@ std::vector<std::vector<cv::Point2f>> featuresDetection(cv::Mat sequenceGray, st
 
 /// Tracking des points d'interêts determinés avec méthode de Lucas Kanade
 
-std::vector<std::vector<cv::Point2f>> lucasKanadeTracking(cv::Mat previousSequenceGray, cv::Mat sequenceGray, std::vector<std::vector<cv::Point2f>> corners)
+std::vector<std::vector<cv::Point2f>> lucasKanadeTracking(cv::Mat previousSequence, cv::Mat sequence, std::vector<std::vector<cv::Point2f>> corners)
 {
+    cv::Mat previousSequenceGray;
+    cv::Mat sequenceGray;
     std::vector<std::vector<cv::Point2f>> newCorners;
     std::vector<uchar> status;
     std::vector<float> err;
+
+    cv::cvtColor(previousSequence, previousSequenceGray, CV_BGR2GRAY);
+    cv::cvtColor(sequence, sequenceGray, CV_BGR2GRAY);
 
     newCorners.resize(corners.size());
 
@@ -424,7 +513,8 @@ int main(int argc, char *argv[])
                    "- template_tracking"                    <<std::endl<<
                    "- LK_tracking"                          <<std::endl<<
                    "- farneback"                            <<std::endl<<
-                   "- camshift_kalman"           <<std::endl<<std::endl<<
+                   "- camshift_kalman"                      <<std::endl<<
+                   "- background_substraction"   <<std::endl<<std::endl<<
                    "Le type de format : "                   <<std::endl<<
                    "- video"                                <<std::endl<<
                    "- image"                     <<std::endl<<std::endl<<
@@ -444,11 +534,11 @@ int main(int argc, char *argv[])
     formatVideo format;
     std::string inputFileName(argv[3]);
     int nbTrames = 501;
+    double fps = 0;
 
     std::vector<cv::Mat> sequence;
-    std::vector<cv::Mat> sequenceGray;
 
-    cv::Mat previousSequenceGray;
+    cv::Mat previousSequence;
 
     int nbPedestrians = 0;
 
@@ -488,6 +578,12 @@ int main(int argc, char *argv[])
 
 
 
+    //Background substraction, pour le tracking LK et goodfeaturestotrack regarder au dessus
+    cv::Ptr<cv::BackgroundSubtractor> pMOG2;
+    std::vector<cv::Rect> detectedPedestrianFiltered;
+
+    pMOG2 = cv::createBackgroundSubtractorMOG2();
+
     //acquisition de la video
     algo = detectAlgo(std::string(argv[1]));
     format = detectFormat(std::string(argv[2]));
@@ -501,14 +597,11 @@ int main(int argc, char *argv[])
     if(format == SEQUENCE_IMAGE)
         sequence.resize(nbTrames);
     else if(format == VIDEO)
-        std::cout<<"video";
+        std::cout<<"video"<<std::endl;
 
-    sequence = extractVideoData(format, inputFileName, nbTrames);
-    sequenceGray.resize(sequence.size());
+    extractVideoData(sequence, format, inputFileName, nbTrames, fps);
 
     cv::namedWindow("Video", cv::WINDOW_AUTOSIZE);
-
-
 
 
 
@@ -516,12 +609,11 @@ int main(int argc, char *argv[])
 
     for(int i=0;i<nbTrames;i++)
     {
-        cv::cvtColor(sequence[i], sequenceGray[i], CV_BGR2GRAY);
 
         if(i>0)
-            previousSequenceGray = sequenceGray[i-1];
+            previousSequence = sequence[i-1];
         else
-            previousSequenceGray = sequenceGray[i];
+            previousSequence = sequence[i];
 
 
 
@@ -537,14 +629,14 @@ int main(int argc, char *argv[])
 
                 if(nbPedestrians != 0)
                 {
-                    featuresDetected = featuresDetection(sequenceGray[i], detectedPedestrian);
+                    featuresDetected = featuresDetection(sequence[i], detectedPedestrian);
                     previousFeaturesDetected.resize(featuresDetected.size());
                     previousFeaturesDetected = featuresDetected;
                 }
             }
             else if(previousFeaturesDetected.size() != 0)
             {
-                featuresDetected = lucasKanadeTracking(previousSequenceGray, sequenceGray[i], previousFeaturesDetected);
+                featuresDetected = lucasKanadeTracking(previousSequence, sequence[i], previousFeaturesDetected);
 
                 previousFeaturesDetected.clear();
                 previousFeaturesDetected.resize(featuresDetected.size());
@@ -580,7 +672,6 @@ int main(int argc, char *argv[])
             {
                 cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
             }
-
 
 
             //affichage de la video
@@ -709,13 +800,57 @@ int main(int argc, char *argv[])
 
 
 
+
+
+
+        ///------------------BACKGROUND-SUBSTRACTION---------------------------//
+
+        else if(algo == BACKGROUND_SUBSTRACTION)
+        {
+            if(i%10 == 0)
+            {
+                backgroundSubstractionDetection(sequence[i], detectedPedestrianFiltered, pMOG2);
+
+                if(detectedPedestrianFiltered.size() != 0)
+                {
+                    featuresDetected = featuresDetection(sequence[i], detectedPedestrianFiltered);
+                    previousFeaturesDetected.resize(featuresDetected.size());
+                    previousFeaturesDetected = featuresDetected;
+                }
+            }
+            else if(previousFeaturesDetected.size() != 0)
+            {
+                featuresDetected = lucasKanadeTracking(previousSequence, sequence[i], previousFeaturesDetected);
+
+                previousFeaturesDetected.clear();
+                previousFeaturesDetected.resize(featuresDetected.size());
+                previousFeaturesDetected = featuresDetected;
+            }
+
+
+            //--------Representation--------------------
+
+
+            for(size_t j=0;j<featuresDetected.size();j++)
+            {
+                detectedPedestrianFiltered[j] = cv::boundingRect(featuresDetected[j]);
+                cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
+            }
+
+
+            //affichage de la video
+            cv::imshow("Video", sequence[i]);
+        }
+
+
+
         //------------------CLEAR-VARIABLES------------------------------------//
 
         detectedPedestrian.clear();
         featuresDetected.clear();
         boxes.clear();
 
-        previousSequenceGray.release();
+        previousSequence.release();
 
         flow.release();
         imGray.release();
@@ -726,7 +861,7 @@ int main(int argc, char *argv[])
 
         //------------------CONDITIONS-ARRET-----------------------------------//
 
-        if (cv::waitKey(66) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
+        if (cv::waitKey((int)(1000/fps)) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
         {
             std::cout << "esc key is pressed by user" << std::endl;
             return 0;
