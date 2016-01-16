@@ -29,6 +29,9 @@ enum formatVideo{SEQUENCE_IMAGE,
                  VIDEO,
                  NOT_DEFINED};
 
+enum trackingOption{GOOD_FEATURES_TO_TRACK,
+                    LUCAS_KANADE,
+                    NOTHING_TO_TRACK};
 
 
 
@@ -166,47 +169,24 @@ std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
 
 //------------------METHODES-BACKGROUND-SUBSTRACTION-----------------------//
 
+///renvoie le centre d'un rectangle
 
-
-/// Comparaisons de roi, pour determiner si il y a deja eu detection
-
-void filterDetectedPedestrian(std::vector<cv::Rect> &detectedPedestrianFiltered, std::vector<cv::Rect> detectedPedestrian)
+cv::Point rectCenter(cv::Rect rect)
 {
-    if(detectedPedestrianFiltered.size() != 0)
-    {
-        for(size_t i=0;i<detectedPedestrianFiltered.size();i++)
-        {
-            for(size_t j=0;j<detectedPedestrian.size();j++)
-            {
-                const cv::Point p1(detectedPedestrian[j].x, detectedPedestrian[j].y+detectedPedestrian[j].height);
-                const cv::Point p2(detectedPedestrian[j].x+detectedPedestrian[j].width, detectedPedestrian[j].y+detectedPedestrian[j].height);
-                const cv::Point p3(detectedPedestrian[j].x+detectedPedestrian[j].width, detectedPedestrian[j].y);
-                const cv::Point p4(detectedPedestrian[j].x, detectedPedestrian[j].y);
+    cv::Point center;
 
-                if(!detectedPedestrianFiltered[i].contains(p1) ||
-                   !detectedPedestrianFiltered[i].contains(p2) ||
-                   !detectedPedestrianFiltered[i].contains(p3) ||
-                   !detectedPedestrianFiltered[i].contains(p4))
-                {
-                    detectedPedestrianFiltered.push_back(detectedPedestrian[j]);
-                }
-            }
-        }
-    }
-    else
-    {
-        for(size_t i=0;i<detectedPedestrian.size();i++)
-        {
-            detectedPedestrianFiltered.push_back(detectedPedestrian[i]);
-        }
-    }
+    center.x = rect.x + rect.width/2;
+    center.y = rect.y + rect.height/2;
+
+    return center;
 }
+
 
 
 
 ///Detection des pietons avec background substraction
 
-void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &detectedPedestrianFiltered, cv::Ptr<cv::BackgroundSubtractor> &pMOG2)
+void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &detectedPedestrianFiltered, cv::Ptr<cv::BackgroundSubtractor> &pMOG2, trackingOption &tracking)
 {
     int threshold = 150;
     cv::Mat mask;
@@ -223,6 +203,14 @@ void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &de
     cv::dilate(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(25,55)));
     cv::erode(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3,6)));
 
+    /*
+    cv::Mat dist;
+    cv::distanceTransform(mask, dist, CV_DIST_L2, 3);
+    cv::normalize(dist, dist, 0, 1., cv::NORM_MINMAX);
+    cv::threshold(dist, dist, .4, 1., CV_THRESH_BINARY);
+    cv::imshow("temp", dist);
+    */
+
     cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE, cv::Point(0,0));
 
     contours_poly.resize(contours.size());
@@ -234,8 +222,16 @@ void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &de
         detectedPedestrian[j] = cv::boundingRect(cv::Mat(contours_poly[j]));
     }
 
-    detectedPedestrianFiltered = detectedPedestrian;
-    //filterDetectedPedestrian(detectedPedestrianFiltered, detectedPedestrian);
+    if(detectedPedestrian.size() != 0)
+    {
+        tracking = GOOD_FEATURES_TO_TRACK;
+        detectedPedestrianFiltered.clear();
+        detectedPedestrianFiltered.resize(detectedPedestrian.size());
+        detectedPedestrianFiltered = detectedPedestrian;
+    }
+    else
+        tracking = NOTHING_TO_TRACK;
+
 }
 
 
@@ -579,8 +575,14 @@ int main(int argc, char *argv[])
 
 
     //Background substraction, pour le tracking LK et goodfeaturestotrack regarder au dessus
+    trackingOption tracking;
     cv::Ptr<cv::BackgroundSubtractor> pMOG2;
     std::vector<cv::Rect> detectedPedestrianFiltered;
+
+    cv::KalmanFilter KF(4,2,0,CV_32F);
+    cv::Mat_<float> measurement(2,1);
+    cv::Mat prediction;
+    cv::Mat estimated;
 
     pMOG2 = cv::createBackgroundSubtractorMOG2();
 
@@ -756,7 +758,7 @@ int main(int argc, char *argv[])
         {
 
             //camshift
-            if(i%20 == 0 && roiCamShift.size() == 0)
+            if(i%20 == 0&& roiCamShift.size() == 0)
             {
                 roiHogDetected = hogDetection(sequence[i], hog);
                 refineROI(roiCamShift, detected, roiHogDetected);
@@ -807,33 +809,91 @@ int main(int argc, char *argv[])
 
         else if(algo == BACKGROUND_SUBSTRACTION)
         {
-            if(i%10 == 0)
+            if(i%10 == 0) //égal 0 pour le test
             {
-                backgroundSubstractionDetection(sequence[i], detectedPedestrianFiltered, pMOG2);
-
-                if(detectedPedestrianFiltered.size() != 0)
-                {
-                    featuresDetected = featuresDetection(sequence[i], detectedPedestrianFiltered);
-                    previousFeaturesDetected.resize(featuresDetected.size());
-                    previousFeaturesDetected = featuresDetected;
-                }
+                backgroundSubstractionDetection(sequence[i], detectedPedestrianFiltered, pMOG2, tracking);
             }
-            else if(previousFeaturesDetected.size() != 0)
+
+            if(tracking == GOOD_FEATURES_TO_TRACK)
             {
+                featuresDetected.resize(detectedPedestrianFiltered.size());
+                featuresDetected = featuresDetection(sequence[i], detectedPedestrianFiltered);
+                previousFeaturesDetected.resize(featuresDetected.size());
+                previousFeaturesDetected = featuresDetected;
+
+                tracking = LUCAS_KANADE;
+
+                KF.transitionMatrix.at<float>(0,0) = 1;
+                KF.transitionMatrix.at<float>(0,1) = 0;
+                KF.transitionMatrix.at<float>(0,2) = 1;
+                KF.transitionMatrix.at<float>(0,3) = 0;
+                KF.transitionMatrix.at<float>(1,0) = 0;
+                KF.transitionMatrix.at<float>(1,1) = 1;
+                KF.transitionMatrix.at<float>(1,2) = 0;
+                KF.transitionMatrix.at<float>(1,3) = 1;
+                KF.transitionMatrix.at<float>(2,0) = 0;
+                KF.transitionMatrix.at<float>(2,1) = 0;
+                KF.transitionMatrix.at<float>(2,2) = 1;
+                KF.transitionMatrix.at<float>(2,3) = 0;
+                KF.transitionMatrix.at<float>(3,0) = 0;
+                KF.transitionMatrix.at<float>(3,1) = 0;
+                KF.transitionMatrix.at<float>(3,2) = 0;
+                KF.transitionMatrix.at<float>(3,3) = 1;
+
+                measurement.setTo(cv::Scalar(0));
+
+                for(size_t j=0;j<featuresDetected.size();j++)
+                {
+                    detectedPedestrianFiltered[j] = cv::boundingRect(featuresDetected[j]);
+                }
+
+                KF.statePre.at<float>(0) = rectCenter(detectedPedestrianFiltered[0]).x;
+                KF.statePre.at<float>(1) = rectCenter(detectedPedestrianFiltered[0]).y;
+                KF.statePre.at<float>(2) = 0;
+                KF.statePre.at<float>(3) = 0;
+
+                cv::setIdentity(KF.measurementMatrix);
+                cv::setIdentity(KF.processNoiseCov, cv::Scalar::all(1e-4));
+                cv::setIdentity(KF.measurementNoiseCov, cv::Scalar::all(1e-1));
+                cv::setIdentity(KF.errorCovPost, cv::Scalar::all(.1));
+            }
+
+            else if(tracking == LUCAS_KANADE)
+            {
+                for(size_t j=0;j<featuresDetected.size();j++)
+                {
+                    detectedPedestrianFiltered[j] = cv::boundingRect(featuresDetected[j]);
+                }
+
                 featuresDetected = lucasKanadeTracking(previousSequence, sequence[i], previousFeaturesDetected);
 
                 previousFeaturesDetected.clear();
                 previousFeaturesDetected.resize(featuresDetected.size());
                 previousFeaturesDetected = featuresDetected;
+
+                prediction = KF.predict();
+                cv::Point predictPt(prediction.at<float>(0),prediction.at<float>(1));
+
+                // Get mouse point
+                measurement(0) = rectCenter(detectedPedestrianFiltered[0]).x;
+                measurement(1) = rectCenter(detectedPedestrianFiltered[0]).y;
+
+                cv::Point measPt(measurement(0),measurement(1));
+
+                // The "correct" phase that is going to use the predicted value and our measurement
+                cv::Mat estimated = KF.correct(measurement);
+                cv::Point statePt(estimated.at<float>(0),estimated.at<float>(1));
+
+                cv::circle(sequence[i], measPt, 1, cv::Scalar(0,255,0), 7, 24);
+                cv::circle(sequence[i], predictPt, 1, cv::Scalar(0,255,255), 7, 24);
             }
 
 
             //--------Representation--------------------
 
-
             for(size_t j=0;j<featuresDetected.size();j++)
             {
-                detectedPedestrianFiltered[j] = cv::boundingRect(featuresDetected[j]);
+                //detectedPedestrianFiltered[j] = cv::boundingRect(featuresDetected[j]);
                 cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
             }
 
