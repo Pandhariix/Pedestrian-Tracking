@@ -13,6 +13,7 @@
 #include "opencv2/features2d/features2d.hpp"
 
 #include <iostream>
+#include <pedestrian.h>
 
 
 
@@ -23,7 +24,8 @@ enum choiceAlgo{HOG_TEMPLATE_TRACKING,
                 HOG_GOODFEATURESTOTRACK_LK,
                 OPT_FLOW_FARNEBACK,
                 CAMSHIFT_KALMAN_FILTER,
-                BACKGROUND_SUBSTRACTION};
+                BACKGROUND_LK,
+                BACKGROUND_KALMAN};
 
 enum formatVideo{SEQUENCE_IMAGE,
                  VIDEO,
@@ -54,8 +56,11 @@ choiceAlgo detectAlgo(std::string argument)
     else if(argument.compare("camshift_kalman") == 0)
         return CAMSHIFT_KALMAN_FILTER;
 
-    else if(argument.compare("background_substraction") == 0)
-        return BACKGROUND_SUBSTRACTION;
+    else if(argument.compare("background_lk") == 0)
+        return BACKGROUND_LK;
+
+    else if(argument.compare("background_kalman") == 0)
+        return BACKGROUND_KALMAN;
 
     else
         return HOG_GOODFEATURESTOTRACK_LK;
@@ -169,6 +174,34 @@ std::vector<cv::Rect> hogDetection(cv::Mat sequence, cv::HOGDescriptor hog)
 
 //------------------METHODES-BACKGROUND-SUBSTRACTION-----------------------//
 
+///trouver le haut du corps
+
+void findUpperBody(cv::CascadeClassifier classifier, cv::Mat sequence, std::vector<cv::Rect> roi, std::vector<std::vector<cv::Rect>> &upper_body)
+{
+    cv::Mat sequenceGray;
+
+    upper_body.clear();
+    upper_body.resize(roi.size());
+
+    cv::cvtColor(sequence, sequenceGray, CV_BGR2GRAY);
+    cv::equalizeHist(sequenceGray, sequenceGray);
+
+    for(size_t i=0;i<roi.size();i++)
+    {
+//        cv::imshow("temp", sequenceGray(roi[i]));
+//        cv::waitKey(0);
+
+        classifier.detectMultiScale(sequenceGray(roi[i]), upper_body[i], 1.1, 0, 0|CV_HAAR_SCALE_IMAGE, cv::Size(20, 20));
+
+        for(size_t j=0;j<upper_body[i].size();j++)
+        {
+            upper_body[i][j].x += roi[i].x;
+            upper_body[i][j].y += roi[i].y;
+        }
+    }
+}
+
+
 ///renvoie le centre d'un rectangle
 
 cv::Point rectCenter(cv::Rect rect)
@@ -198,10 +231,13 @@ void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &de
 
     pMOG2->apply(sequence,sequenceGrayDiff);
 
+
     cv::threshold(sequenceGrayDiff, mask, threshold, 255, cv::THRESH_BINARY);
+
     cv::erode(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(6,6)));
     cv::dilate(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(25,55)));
     cv::erode(mask, mask, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3,6)));
+
 
     /*
     cv::Mat dist;
@@ -220,6 +256,28 @@ void backgroundSubstractionDetection(cv::Mat sequence, std::vector<cv::Rect> &de
     {
         cv::approxPolyDP(cv::Mat(contours[j]), contours_poly[j], 3, true);
         detectedPedestrian[j] = cv::boundingRect(cv::Mat(contours_poly[j]));
+
+
+        //test
+        /*
+        double pix = 30;
+        if(detectedPedestrian[j].x >= pix)
+            detectedPedestrian[j].x -= pix;
+        else
+            detectedPedestrian[j].x = 0;
+        if((detectedPedestrian[j].x+detectedPedestrian[j].width) <= (sequence.cols-pix))
+            detectedPedestrian[j].width += pix;
+        else
+            detectedPedestrian[j].width = sequence.cols - detectedPedestrian[j].x;
+        if(detectedPedestrian[j].y >= pix)
+            detectedPedestrian[j].y -= pix;
+        else
+            detectedPedestrian[j].y = 0;
+        if((detectedPedestrian[j].y+detectedPedestrian[j].height) <= (sequence.rows-pix))
+            detectedPedestrian[j].height += pix;
+        else
+            detectedPedestrian[j].height = sequence.rows - detectedPedestrian[j].y;
+        */
     }
 
     if(detectedPedestrian.size() != 0)
@@ -494,6 +552,49 @@ void refineROI(std::vector<cv::Rect> &roiRefined, std::vector<bool> &detected, s
 
 
 
+//------------------METHODES-DETECTION-DE-ROI-FOR-KALMAN-------------------//
+
+/// Detections de roi pour le recalage de Kalman
+
+cv::Rect findROI(cv::Point predict, std::vector<cv::Rect> pedestrian)
+{
+    cv::Rect roi;
+    double dist = 0;
+    double distmin = 99999;
+
+    for(size_t i=0;i<pedestrian.size();i++)
+    {
+        dist = cv::norm(cv::Mat(predict), cv::Mat(rectCenter(pedestrian[i])));
+
+        if(dist < distmin)
+        {
+            roi = pedestrian[i];
+            distmin = dist;
+        }
+    }
+
+    return roi;
+}
+
+
+
+
+
+/// Detection de recouvrement de rois
+
+bool fusionRects(cv::Rect prevRectK, cv::Rect rectK)
+{
+    if(prevRectK.area() == 0)
+        return false;
+
+    if(rectK.width > 1.8*prevRectK.width)
+        return true;
+    else
+        return false;
+}
+
+
+
 
 
 //------------------MAIN---------------------------------------------------//
@@ -510,7 +611,8 @@ int main(int argc, char *argv[])
                    "- LK_tracking"                          <<std::endl<<
                    "- farneback"                            <<std::endl<<
                    "- camshift_kalman"                      <<std::endl<<
-                   "- background_substraction"   <<std::endl<<std::endl<<
+                   "- background_lk"                        <<std::endl<<
+                   "- background_kalman"         <<std::endl<<std::endl<<
                    "Le type de format : "                   <<std::endl<<
                    "- video"                                <<std::endl<<
                    "- image"                     <<std::endl<<std::endl<<
@@ -573,7 +675,7 @@ int main(int argc, char *argv[])
     cv::Point2f rect_points[4];
 
 
-
+    //--------------------------------------------------------------------------------------//
     //Background substraction, pour le tracking LK et goodfeaturestotrack regarder au dessus
     trackingOption tracking;
     cv::Ptr<cv::BackgroundSubtractor> pMOG2;
@@ -585,6 +687,56 @@ int main(int argc, char *argv[])
     cv::Mat estimated;
 
     pMOG2 = cv::createBackgroundSubtractorMOG2();
+
+
+    //Avec ajout du Haar cascade classifier
+    std::vector<std::vector<cv::Rect>> rect_upper_body;
+    cv::CascadeClassifier classifier;
+    std::string upper_body_cascade_name = "haarcascade_fullbody.xml";
+
+    if(!classifier.load(upper_body_cascade_name))
+    {
+        std::cout<<"le fichier "<<upper_body_cascade_name<<" ne peut etre charge"<<std::endl;
+        return -1;
+    }
+
+    //--------------------------------------------------------------------------------------//
+
+
+    //Background substraction and Kalman
+    bool initKalman = true;
+    cv::KalmanFilter Kalman(4,2,0,CV_32F);
+    cv::Mat_<float> measurmt(2,1);
+    cv::Mat predict;
+    cv::Mat estim;
+
+    Kalman.transitionMatrix.at<float>(0,0) = 1;
+    Kalman.transitionMatrix.at<float>(0,1) = 0;
+    Kalman.transitionMatrix.at<float>(0,2) = 1;
+    Kalman.transitionMatrix.at<float>(0,3) = 0;
+    Kalman.transitionMatrix.at<float>(1,0) = 0;
+    Kalman.transitionMatrix.at<float>(1,1) = 1;
+    Kalman.transitionMatrix.at<float>(1,2) = 0;
+    Kalman.transitionMatrix.at<float>(1,3) = 1;
+    Kalman.transitionMatrix.at<float>(2,0) = 0;
+    Kalman.transitionMatrix.at<float>(2,1) = 0;
+    Kalman.transitionMatrix.at<float>(2,2) = 1;
+    Kalman.transitionMatrix.at<float>(2,3) = 0;
+    Kalman.transitionMatrix.at<float>(3,0) = 0;
+    Kalman.transitionMatrix.at<float>(3,1) = 0;
+    Kalman.transitionMatrix.at<float>(3,2) = 0;
+    Kalman.transitionMatrix.at<float>(3,3) = 1;
+
+    measurmt.setTo(cv::Scalar(0));
+
+    cv::setIdentity(Kalman.measurementMatrix);
+    cv::setIdentity(Kalman.processNoiseCov, cv::Scalar::all(1e-4));
+    cv::setIdentity(Kalman.measurementNoiseCov, cv::Scalar::all(1e-1));
+    cv::setIdentity(Kalman.errorCovPost, cv::Scalar::all(.1));
+
+
+    cv::Rect rectK;
+    cv::Rect prevRectK;
 
     //acquisition de la video
     algo = detectAlgo(std::string(argv[1]));
@@ -758,7 +910,7 @@ int main(int argc, char *argv[])
         {
 
             //camshift
-            if(i%20 == 0&& roiCamShift.size() == 0)
+            if(i%20 == 0 && roiCamShift.size() == 0)
             {
                 roiHogDetected = hogDetection(sequence[i], hog);
                 refineROI(roiCamShift, detected, roiHogDetected);
@@ -807,7 +959,7 @@ int main(int argc, char *argv[])
 
         ///------------------BACKGROUND-SUBSTRACTION---------------------------//
 
-        else if(algo == BACKGROUND_SUBSTRACTION)
+        else if(algo == BACKGROUND_LK)
         {
             if(i%10 == 0) //égal 0 pour le test
             {
@@ -884,15 +1036,23 @@ int main(int argc, char *argv[])
                 cv::Mat estimated = KF.correct(measurement);
                 cv::Point statePt(estimated.at<float>(0),estimated.at<float>(1));
 
-                cv::circle(sequence[i], measPt, 1, cv::Scalar(0,255,0), 7, 24);
-                cv::circle(sequence[i], predictPt, 1, cv::Scalar(0,255,255), 7, 24);
+                //cv::circle(sequence[i], measPt, 1, cv::Scalar(0,255,0), 7, 24);
+                //cv::circle(sequence[i], predictPt, 1, cv::Scalar(0,255,255), 7, 24);
             }
 
 
             //--------Representation--------------------
 
+            if(tracking != NOTHING_TO_TRACK)
+                findUpperBody(classifier, sequence[i], detectedPedestrianFiltered, rect_upper_body);
+
             for(size_t j=0;j<featuresDetected.size();j++)
             {
+
+                for(size_t k=0;k<rect_upper_body[j].size();k++)
+                {
+                    cv::rectangle(sequence[i], rect_upper_body[j][k], cv::Scalar( 0, 255, 0), 2, 8, 0 );
+                }
                 //detectedPedestrianFiltered[j] = cv::boundingRect(featuresDetected[j]);
                 cv::rectangle(sequence[i], cv::boundingRect(featuresDetected[j]), cv::Scalar( 0, 0, 255), 2, 8, 0 );
             }
@@ -902,6 +1062,61 @@ int main(int argc, char *argv[])
             cv::imshow("Video", sequence[i]);
         }
 
+        else if(algo == BACKGROUND_KALMAN)
+        {
+            int refresh = 8;
+
+            if(i%refresh == 0)
+            {
+                backgroundSubstractionDetection(sequence[i], detectedPedestrianFiltered, pMOG2, tracking);
+            }
+            if(initKalman && detectedPedestrianFiltered.size() != 0)
+            {
+                Kalman.statePre.at<float>(0) = rectCenter(detectedPedestrianFiltered[0]).x;
+                Kalman.statePre.at<float>(1) = rectCenter(detectedPedestrianFiltered[0]).y;
+                Kalman.statePre.at<float>(2) = 0;
+                Kalman.statePre.at<float>(3) = 0;
+
+                initKalman = false;
+            }
+
+            if(detectedPedestrianFiltered.size() != 0)
+            {
+                predict = Kalman.predict();
+                cv::Point predictPt(predict.at<float>(0),predict.at<float>(1));
+
+
+                // The "correct" phase that is going to use the predicted value and our measurement
+                if(i%refresh == 0)
+                {
+                    rectK = findROI(predictPt, detectedPedestrianFiltered);
+
+                    if(!fusionRects(prevRectK, rectK))
+                    {
+                        cv::Point refPoint = rectCenter(rectK);
+
+                        // Get center point
+                        measurmt(0) = refPoint.x;
+                        measurmt(1) = refPoint.y;
+
+                        cv::Point measPt(measurmt(0),measurmt(1));
+                        cv::Mat estim = Kalman.correct(measurmt);
+                        cv::Point statePt(estim.at<float>(0),estim.at<float>(1));
+                    }
+
+                    prevRectK = rectK;
+                }
+
+                std::string str = std::to_string(sqrt(pow(Kalman.statePre.at<float>(2), 2)+pow(Kalman.statePre.at<float>(3), 2)));
+
+                //cv::circle(sequence[i], measPt, 1, cv::Scalar(0,255,0), 7, 24);
+                cv::circle(sequence[i], predictPt, 1, cv::Scalar(0,255,255), 7, 24);
+                cv::putText(sequence[i], str, predictPt, cv::FONT_HERSHEY_PLAIN, 1.0, CV_RGB(255,0,0), 2.0);
+            }
+
+            cv::imshow("Video", sequence[i]);
+
+        }
 
 
         //------------------CLEAR-VARIABLES------------------------------------//
