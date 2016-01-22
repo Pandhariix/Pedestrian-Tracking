@@ -914,11 +914,28 @@ int main(int argc, char *argv[])
             {
                 roiHogDetected = hogDetection(sequence[i], hog);
                 refineROI(roiCamShift, detected, roiHogDetected);
+
+                //test
+                if(roiCamShift.size() != 0)
+                {
+                    /*
+                    roiCamShift[0].x += 30;
+                    roiCamShift[0].width -= 60;
+                    roiCamShift[0].y += 40;
+                    roiCamShift[0].height -= 100;
+                    */
+                    roiCamShift[0].x += roiCamShift[0].width/2;
+                    roiCamShift[0].width = roiCamShift[0].width/3;
+                    //roiCamShift[0].y += roiCamShift[0].height/2;
+                    roiCamShift[0].height = roiCamShift[0].height/3;
+                }
+                //
             }
 
             backProj = computeProbImage(sequence[i], roiCamShift, hist, detected);
 
-
+            if (roiCamShift.size() != 0)
+                cv::imshow("temp", backProj[0]);
             ///-------Test-Camshift--------------------///
 
             rectCamShift.resize(roiCamShift.size());
@@ -931,9 +948,15 @@ int main(int argc, char *argv[])
                 cv::imshow("before camshift", backProj[j]);
                 cv::waitKey(0);
                 */
+                cv::Rect rectMeanShift;
+                rectMeanShift = roiCamShift[j];
+                cv::meanShift(backProj[j], rectMeanShift, cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 10, 1));
+
+                cv::rectangle(sequence[i], rectMeanShift, cv::Scalar( 0, 255, 0), 2, 8, 0 );
 
                 rectCamShift[j] = cv::CamShift(backProj[j], roiCamShift[j], cv::TermCriteria(cv::TermCriteria::EPS | cv::TermCriteria::COUNT, 10, 1));
                 rectCamShift[j].points(rect_points);
+
 
                 for(int k = 0; k < 4; k++)
                     cv::line(sequence[i], rect_points[k], rect_points[(k+1)%4], cv::Scalar( 0, 0, 255), 2, 8);
@@ -1064,7 +1087,7 @@ int main(int argc, char *argv[])
 
         else if(algo == BACKGROUND_KALMAN)
         {
-            int refresh = 8;
+            int refresh = 6;
 
             if(i%refresh == 0)
             {
@@ -1095,9 +1118,11 @@ int main(int argc, char *argv[])
                     {
                         cv::Point refPoint = rectCenter(rectK);
 
+
                         // Get center point
                         measurmt(0) = refPoint.x;
                         measurmt(1) = refPoint.y;
+
 
                         cv::Point measPt(measurmt(0),measurmt(1));
                         cv::Mat estim = Kalman.correct(measurmt);
