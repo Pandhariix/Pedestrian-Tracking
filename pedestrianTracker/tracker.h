@@ -1,0 +1,29 @@
+/**
+  * Projet de detection et tracking de pieton
+  *
+  * Thiriet Lucien
+  * Counathe Kevin
+  * Busy Maxime
+  *
+  * Filiere TDSI, departement GE, INSA de Lyon
+  *
+  **/
+
+#ifndef TRACKER_H
+#define TRACKER_H
+
+#include <opencv2/opencv.hpp>
+#include <pedestrianstructure.h>
+
+class Tracker
+{
+private:
+
+public:
+
+    Tracker();
+
+    void camshift(std::vector<Pedestrian> &pedestrian);
+};
+
+#endif // TRACKER_H
