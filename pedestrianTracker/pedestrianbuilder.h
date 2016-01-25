@@ -19,9 +19,12 @@ class PedestrianBuilder
 {
 private:
 
+    int videoWidth;
+    int videoHeight;
+
 public:
 
-    PedestrianBuilder();
+    PedestrianBuilder(int videoWidth, int videoHeight);
 
     void detectNewPedestrian(std::vector<Pedestrian> &pedestrian, std::vector<cv::Rect> pedestrianSubDetected);
     void buildPedestrian(std::vector<Pedestrian> &pedestrian, cv::Mat sequence);

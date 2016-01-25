@@ -15,6 +15,7 @@
 
 #include <opencv2/video/background_segm.hpp>
 #include <opencv2/opencv.hpp>
+#include <blobpedestrianstructure.h>
 
 class BackgroundSubSegmenter
 {

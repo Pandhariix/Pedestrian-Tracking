@@ -1,8 +1,9 @@
 #include "pedestrianbuilder.h"
 
-PedestrianBuilder::PedestrianBuilder()
+PedestrianBuilder::PedestrianBuilder(int videoWidth, int videoHeight)
 {
-
+    this->videoWidth = videoWidth;
+    this->videoHeight = videoHeight;
 }
 
 
@@ -29,17 +30,16 @@ void PedestrianBuilder::detectNewPedestrian(std::vector<Pedestrian> &pedestrian,
                 break;
         }
 
-        if(intersect.area() == 0 && (pedestrianSubDetected[i].width/pedestrianSubDetected[i].height) <= 0.33)
+        if(intersect.area() == 0 && pedestrian.size() < pedestrianSubDetected.size() && (pedestrianSubDetected[i].width/pedestrianSubDetected[i].height) <= 0.33)
         {
             newPedestrian.window = pedestrianSubDetected[i];
 
             //TODO meilleur centrage
-            newPedestrian.window.x += newPedestrian.window.width/2;
-            newPedestrian.window.width = newPedestrian.window.width/3;
-            //roiCamShift[0].y += roiCamShift[0].height/2;
-            newPedestrian.window.height = newPedestrian.window.height/3;
+            newPedestrian.window.x += newPedestrian.window.width/3;
+            newPedestrian.window.width = newPedestrian.window.width/4;
+            newPedestrian.window.y += newPedestrian.window.height/3;
+            newPedestrian.window.height = newPedestrian.window.height/4;
             //
-
             pedestrian.push_back(newPedestrian);
         }
     }
@@ -100,7 +100,7 @@ void PedestrianBuilder::buildPedestrian(std::vector<Pedestrian> &pedestrian, cv:
 
             roi.release();
             maskroi.release();
-            buf.release();
+                buf.release();
         }
 
         cv::calcBackProject(&hue, 1, 0, pedestrian[i].histogram, pedestrian[i].backProj, &range);

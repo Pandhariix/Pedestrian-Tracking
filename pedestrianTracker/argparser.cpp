@@ -8,13 +8,16 @@ ArgParser::ArgParser()
                "- video"                                       <<std::endl<<
                "- image"                            <<std::endl<<std::endl<<
                "Le chemin/nom du fichier d'input"              <<std::endl<<
+               "Le type de tracking utilisé :"                 <<std::endl<<
+               "- blob_tracking"                               <<std::endl<<
+               "- camshift_tracking"                <<std::endl<<std::endl<<
                "-----------------------------------------------"<<std::endl;
     std::exit(EXIT_FAILURE);
 }
 
-ArgParser::ArgParser(const int argc, std::string format, std::string file)
+ArgParser::ArgParser(const int argc, std::string format, std::string file, std::string tracking_algorithm)
 {
-    if(argc != 3)
+    if(argc != 4)
     {
         std::cout<<"----------------------------------------------"<<std::endl<<
                    "---PedestrianTracker---"            <<std::endl<<std::endl<<
@@ -22,15 +25,20 @@ ArgParser::ArgParser(const int argc, std::string format, std::string file)
                    "- video"                                       <<std::endl<<
                    "- image"                            <<std::endl<<std::endl<<
                    "Le chemin/nom du fichier d'input"              <<std::endl<<
+                   "Le type de tracking utilise :"                 <<std::endl<<
+                   "- blob_tracking"                               <<std::endl<<
+                   "- camshift_tracking"                <<std::endl<<std::endl<<
                    "-----------------------------------------------"<<std::endl;
         std::exit(EXIT_FAILURE);
     }
 
-    this->args.resize(2);
+    this->args.resize(3);
     this->args[0] = format;
     this->args[1] = file;
+    this->args[2] = tracking_algorithm;
 
     this->detectFormat();
+    this->detectTrackingAlgorithm();
 }
 
 
@@ -44,7 +52,20 @@ void ArgParser::detectFormat()
         this->formatType = SEQUENCE_VIDEO;
 
     else
-        this->formatType = UNDEFINED;
+        this->formatType = UNDEFINED_FORMAT;
+}
+
+
+void ArgParser::detectTrackingAlgorithm()
+{
+    if(this->args[2].compare("blob_tracking") == 0)
+        this->algorithm = BLOB_TRACKING;
+
+    else if(this->args[2].compare("camshift_tracking") == 0)
+        this->algorithm = CAMSHIFT_TRACKING;
+
+    else
+        this->algorithm = UNDEFINED_ALGORITHM;
 }
 
 
@@ -112,13 +133,22 @@ void ArgParser::extractVideo(std::vector<cv::Mat> &sequence, int &nbTrames, doub
         break;
     }
 
-    case UNDEFINED:
+    case UNDEFINED_FORMAT:
         std::cout<<"Argument incorrect, veuillez entrer 'image' ou 'video'"<<std::endl;
+        std::exit(EXIT_FAILURE);
         break;
 
     default:
         std::cout<<"Argument incorrect, veuillez entrer 'image' ou 'video'"<<std::endl;
+        std::exit(EXIT_FAILURE);
         break;
 
     }
+}
+
+
+
+trackingAlgo ArgParser::selectedAlgorithm()
+{
+    return this->algorithm;
 }

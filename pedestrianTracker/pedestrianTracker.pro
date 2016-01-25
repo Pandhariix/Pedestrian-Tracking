@@ -17,5 +17,6 @@ HEADERS += \
     backgroundsubsegmenter.h \
     pedestrianstructure.h \
     pedestrianbuilder.h \
-    tracker.h
+    tracker.h \
+    blobpedestrianstructure.h
 
