@@ -1,4 +1,2 @@
-# Tracking
-Pedestrian tracking project
-
-bhattacharyya opencv Information_mutuelle image de background voir watershed
+# Pedestrian tracking project 
+Pedestrian tracking project Digital Images and Signal Processing option, INSA Lyon, 2015-2016
